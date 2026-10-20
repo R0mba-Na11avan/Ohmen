@@ -1,0 +1,1010 @@
+/* Bundled locally — this is a desktop app; it must look right offline. */
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/plex-sans-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/plex-sans-500.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Sans';
+  font-weight: 600;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/plex-sans-600.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/plex-mono-400.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'IBM Plex Mono';
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+  src: url('./assets/fonts/plex-mono-500.woff2') format('woff2');
+}
+
+:root {
+  --bench-void: #0a0f0d;
+  --bench-base: #0e1512;
+  --bench-raised: #141d19;
+  --bench-line: #26332d;
+  --bench-line-strong: #35453d;
+  --ink-primary: #e4eae6;
+  --ink-secondary: #9fb0a8;
+  --ink-muted: #6b7c74;
+  --copper: #d68a4c;
+  --copper-bright: #eea766;
+  --copper-faint: rgba(214, 138, 76, 0.12);
+  --agent: #a374ce;
+  --status-critical: #e5484d;
+  --status-caution: #e0912f;
+  --status-verified: #46c88a;
+  --power-rail: #f2604c; /* diagram supply edges */
+  --paper: #ede6d6;
+  --paper-ink: #211e17;
+  --sans: 'IBM Plex Sans', system-ui, sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bench-void);
+  color: var(--ink-primary);
+  font-family: var(--sans);
+  font-size: 14px;
+  line-height: 21px;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+::selection {
+  background: var(--copper-faint);
+  color: var(--copper-bright);
+}
+
+/* Faint dot-grid on the void, like a bench cutting mat. */
+.dot-grid {
+  background-image: radial-gradient(rgba(159, 176, 168, 0.06) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* Controls — bench instrument look, so components need not inline every state. */
+/* Instrument-tactile motion: fast, ease-out, confirms state — never decorates. */
+:root {
+  --ease-out: cubic-bezier(0.2, 0, 0, 1);
+  --tactile: 120ms;
+}
+
+button {
+  font-family: var(--sans);
+  font-size: 12.5px;
+  color: var(--ink-primary);
+  background: var(--bench-raised);
+  border: 1px solid var(--bench-line);
+  border-radius: 6px;
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: border-color var(--tactile) var(--ease-out), color var(--tactile) var(--ease-out),
+    background var(--tactile) var(--ease-out), transform var(--tactile) var(--ease-out);
+}
+button:hover:not(:disabled) {
+  border-color: var(--copper);
+  color: var(--copper-bright);
+}
+/* Press: a small tactile settle, like a switch clicking — not a shadow lift. */
+button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+/* Header project name: reads as text, reveals it's a link on hover/focus. */
+button.project-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: var(--mono);
+  color: var(--ink-primary);
+  background: transparent;
+  border-color: transparent;
+  padding: 2px 6px;
+  margin: 0 -6px;
+}
+button.project-name:hover:not(:disabled),
+button.project-name:focus-visible {
+  background: var(--copper-faint);
+  border-color: transparent;
+  color: var(--copper-bright);
+}
+button.project-name .project-name-icon {
+  opacity: 0;
+  transition: opacity var(--tactile) var(--ease-out);
+}
+button.project-name:hover .project-name-icon,
+button.project-name:focus-visible .project-name-icon {
+  opacity: 1;
+}
+button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+input,
+select,
+textarea {
+  font-family: var(--sans);
+  font-size: 13px;
+  color: var(--ink-primary);
+  background: var(--bench-base);
+  border: 1px solid var(--bench-line);
+  border-radius: 6px;
+  padding: 5px 8px;
+}
+input::placeholder,
+textarea::placeholder {
+  color: var(--ink-muted);
+}
+
+/* Chat layout: thread, composer dock, spacer. A new chat splits the free height
+   between the thread (greeting bottom-aligned in it) and the spacer, so the
+   greeting and composer sit centred; a conversation gives the thread all of it. */
+.chat-main {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+}
+.chat-thread {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: auto;
+}
+.chat-main.empty .chat-thread {
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.chat-spacer {
+  flex: 0 0 0;
+}
+.chat-main.empty .chat-spacer {
+  flex: 1 1 0;
+}
+.chat-dock {
+  padding-top: 12px;
+}
+
+/* New-chat headline: the mark beside a time-of-day line. */
+.greeting {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-bottom: 22px;
+}
+.greeting h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 32px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--ink-primary);
+  text-wrap: balance;
+}
+/* On first send the greeting fades where it stood while the composer docks. */
+@keyframes greet-out {
+  to {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+}
+.greet-out {
+  position: absolute;
+  pointer-events: none;
+  animation: greet-out 160ms ease-in both;
+}
+
+/* Chat composer: one box holding the attachment strip, the text field and its
+   tools, so the field's own chrome goes and the box takes the focus ring. */
+.composer {
+  background: var(--bench-base);
+  border: 1px solid var(--bench-line);
+  border-radius: 10px;
+  transition: border-color var(--tactile) var(--ease-out);
+}
+.composer textarea {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  font-size: 14px;
+  padding: 12px 14px 4px;
+}
+.composer-tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 8px;
+}
+.composer-tools button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+}
+.composer-icon {
+  border-color: transparent;
+  background: transparent;
+  color: var(--ink-secondary);
+}
+.composer-icon:hover:not(:disabled) {
+  background: var(--bench-raised);
+}
+/* Send: the copper voice at rest (copper-dim edge), lit when there's something to send. */
+.composer-send {
+  border-color: var(--copper-dim);
+  color: var(--copper);
+}
+.composer-send:disabled {
+  border-color: var(--bench-line);
+  color: var(--ink-muted);
+}
+/* While a reply streams, Send becomes Stop (a filled square). */
+.composer-send.stop {
+  border-color: var(--copper);
+  color: var(--copper-bright);
+}
+.composer-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  margin-top: 4px;
+}
+.composer-note {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ink-muted);
+  min-width: 0;
+}
+.composer-meta .chips {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+/* A quiet control that reads as a label until touched (model / effort under the composer). */
+button.chip {
+  background: transparent;
+  border-color: transparent;
+  color: var(--ink-secondary);
+  padding: 3px 8px;
+}
+button.chip[aria-expanded='true'] {
+  background: var(--bench-raised);
+  border-color: var(--bench-line);
+}
+.composer textarea:focus-visible {
+  outline: none;
+}
+.composer:has(textarea:focus-visible) {
+  outline: 2px solid var(--copper-bright);
+  outline-offset: 1px;
+}
+.composer.drop {
+  border-color: var(--copper);
+  background: var(--copper-faint);
+}
+
+/* Attached image: a square thumbnail; hovering it shows the file name and, in the
+   composer, a copper remove button in the top-right corner. */
+.attach-thumb {
+  position: relative;
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--bench-line-strong);
+  border-radius: 10px;
+  background: var(--bench-raised);
+  overflow: hidden;
+}
+.attach-thumb img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.attach-open {
+  display: block;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  cursor: zoom-in;
+}
+.attach-name {
+  pointer-events: none;
+}
+
+/* Full-size look at an attached image; the dimmed bench around it dismisses. */
+.lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px;
+  background: rgba(10, 15, 13, 0.9);
+  cursor: zoom-out;
+  animation: settle 160ms var(--ease-out) both;
+}
+.lightbox img {
+  min-height: 0;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  border: 1px solid var(--bench-line-strong);
+  border-radius: 6px;
+  cursor: default;
+}
+.lightbox figcaption {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: var(--ink-secondary);
+  cursor: default;
+}
+
+.attach-name,
+.attach-remove {
+  position: absolute;
+  background: rgba(10, 15, 13, 0.85);
+  opacity: 0;
+  transition: opacity var(--tactile) var(--ease-out);
+}
+.attach-name {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 2px 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--ink-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.attach-remove {
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-color: var(--copper);
+  border-radius: 50%;
+  color: var(--copper);
+}
+.attach-thumb:hover .attach-name,
+.attach-thumb:hover .attach-remove,
+.attach-thumb:focus-within .attach-name,
+.attach-thumb:focus-within .attach-remove {
+  opacity: 1;
+}
+
+/* Model picker: unstarred stars only show on the row being pointed at. */
+.model-star {
+  opacity: 0;
+}
+.model-star[aria-pressed='true'],
+.model-row:hover .model-star,
+.model-row:focus-within .model-star {
+  opacity: 1;
+}
+
+:focus-visible {
+  outline: 2px solid var(--copper-bright);
+  outline-offset: 1px;
+  border-radius: 4px;
+}
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Bench scrollbars. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--bench-line);
+  border-radius: 6px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--bench-line-strong);
+}
+
+/* One orchestrated moment: findings settle into the feed like a scope trace. */
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.settle {
+  animation: settle 160ms var(--ease-out) both;
+}
+/* Dialog close: settle reversed, quicker; the scrim fades with it. */
+@keyframes settle-out {
+  to {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+.settle-out {
+  animation: settle-out 140ms ease-in both;
+  pointer-events: none;
+}
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes scrim-out {
+  to {
+    opacity: 0;
+  }
+}
+.scrim-in {
+  animation: scrim-in 160ms var(--ease-out);
+}
+.scrim-out {
+  animation: scrim-out 140ms ease-in both;
+  pointer-events: none;
+}
+
+/* A data mutation confirms itself: the changed row flashes copper, then fades. */
+@keyframes rowflash {
+  from {
+    background: var(--copper-faint);
+  }
+  to {
+    background: transparent;
+  }
+}
+.rowflash {
+  animation: rowflash 700ms var(--ease-out);
+}
+
+/* Popover (the row-action menu): the one place a floating layer earns a shadow. */
+@keyframes popin {
+  from {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.popin {
+  animation: popin 120ms var(--ease-out) both;
+}
+/* The way out: popin reversed, a touch quicker so closing never feels laggy.
+   Its own keyframes: swapping only the direction wouldn't restart the animation. */
+@keyframes popout {
+  to {
+    opacity: 0;
+    transform: translateY(-3px);
+  }
+}
+.popout {
+  animation: popout 90ms ease-in both;
+  pointer-events: none;
+}
+/* The same, for a popover that opens upward (under the docked composer). */
+@keyframes popin-up {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.popin-up {
+  animation: popin-up 120ms var(--ease-out) both;
+}
+@keyframes popout-up {
+  to {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+.popout-up {
+  animation: popout-up 90ms ease-in both;
+  pointer-events: none;
+}
+
+/* Project opened: the header drops in, then the tab strip and workspace fade up
+   behind it. `backwards` (not `both`) so no transform lingers after the run —
+   a leftover transform would become the containing block for fixed popovers. */
+@keyframes bar-in {
+  from {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.bar-in {
+  animation: bar-in 320ms var(--ease-out) backwards;
+}
+.rise-in {
+  animation: rise-in 360ms var(--ease-out) 120ms backwards;
+}
+.rise-in-late {
+  animation: rise-in 420ms var(--ease-out) 220ms backwards;
+}
+
+/* Switching project: the opening run in reverse, quicker — the header lifts away
+   while the workspace sinks and fades, then the start screen fades up in their
+   place. Own keyframes (not `reverse`) so swapping the class restarts the run. */
+@keyframes bar-out {
+  to {
+    opacity: 0;
+    transform: translateY(-100%);
+  }
+}
+@keyframes sink-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+@keyframes start-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+.bar-out {
+  animation: bar-out 200ms ease-in both;
+  pointer-events: none;
+}
+.sink-out {
+  animation: sink-out 200ms ease-in both;
+  pointer-events: none;
+}
+.start-in {
+  animation: start-in 420ms var(--ease-out) backwards;
+}
+
+/* Diagram power rails: when flow is on, a dash marches source -> load along each
+   power edge (paths are drawn source -> target, so a negative offset = forward). */
+@keyframes power-flow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+/* Power is red — like a schematic's supply net. Kept a warmer shade than
+   --status-critical so it doesn't read as a must-fix marker. */
+path.power-flow {
+  stroke: var(--power-rail) !important;
+}
+.flow-on path.power-flow {
+  stroke-dasharray: 8 4 !important;
+  animation: power-flow 0.9s linear infinite;
+}
+
+/* Streaming reply: an agent-purple block caret at the end of the text. It sits on
+   the deepest last leaf block (a paragraph, the last item of the last list, the
+   last cell, the open code block) whose ancestors inside .md are all last
+   children; it skips mermaid's SVG. Alone, it is the wait cue before the first
+   word. Reduced motion stops the blink, not the caret. */
+@keyframes caret-blink {
+  50% {
+    opacity: 0;
+  }
+}
+.md.streaming
+  :is(p, li, h1, h2, h3, h4, h5, h6, td, th, pre > code):last-child:not(
+    :has(> :is(p, ul, ol, pre, div, table, blockquote))
+  ):not(.md :not(:last-child) *):not(svg *)::after,
+.caret.solo {
+  content: '';
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: -0.17em;
+  background: var(--agent);
+  border-radius: 1px;
+  animation: caret-blink 1s steps(1, end) infinite;
+}
+.caret.solo {
+  margin: 4px 0;
+}
+
+/* Live reasoning: the "Thinking…" label breathes until the answer starts. */
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.breathe {
+  animation: breathe 1.6s ease-in-out infinite;
+}
+
+/* Busy icon (e.g. the model list refreshing). */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.9s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Markdown on the bench (chat answers, memory). */
+.md {
+  font-size: 14px;
+  line-height: 21px;
+  color: var(--ink-primary);
+}
+.md p {
+  margin: 0 0 8px;
+}
+.md p:last-child {
+  margin-bottom: 0;
+}
+.md ul,
+.md ol {
+  margin: 0 0 8px;
+  padding-left: 20px;
+}
+.md li {
+  margin: 2px 0;
+}
+/* Diagram caption: explainers recede, part names and section heads lead. */
+.md.caption {
+  color: var(--ink-secondary);
+}
+.md.caption strong {
+  color: var(--ink-primary);
+  font-weight: 500;
+}
+.md.caption ul:last-child,
+.md.caption ol:last-child {
+  margin-bottom: 0;
+}
+.md code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: var(--bench-base);
+  border: 1px solid var(--bench-line);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+.md pre {
+  background: var(--bench-base);
+  border: 1px solid var(--bench-line);
+  border-radius: 6px;
+  padding: 10px;
+  overflow: auto;
+}
+.md pre code {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.md a {
+  color: var(--copper);
+}
+.md h1,
+.md h2,
+.md h3 {
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 12px 0 6px;
+}
+.md strong {
+  font-weight: 600;
+}
+.md blockquote {
+  margin: 0 0 8px;
+  padding: 0 0 0 12px;
+  border-left: 2px solid var(--bench-line-strong);
+  color: var(--ink-secondary);
+}
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--bench-line);
+  margin: 16px 0;
+}
+.md img {
+  max-width: 100%;
+}
+.md input[type='checkbox'] {
+  margin: 0 6px 0 0;
+  accent-color: var(--copper);
+}
+.md li:has(> input[type='checkbox']) {
+  list-style: none;
+  margin-left: -18px;
+}
+
+/* Tables: hairline rules, quiet header, scroll inside the column when wide. */
+.md-table {
+  overflow-x: auto;
+  margin: 4px 0 12px;
+  border: 1px solid var(--bench-line);
+  border-radius: 8px;
+}
+.md table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 13px;
+  line-height: 19px;
+  font-variant-numeric: tabular-nums;
+}
+.md th,
+.md td {
+  padding: 7px 12px;
+  text-align: left;
+  vertical-align: top;
+  border-bottom: 1px solid var(--bench-line);
+}
+.md th {
+  font-weight: 500;
+  color: var(--ink-secondary);
+  background: var(--bench-raised);
+  white-space: nowrap;
+}
+.md tr:last-child td {
+  border-bottom: 0;
+}
+.md td + td,
+.md th + th {
+  border-left: 1px solid var(--bench-line);
+}
+
+/* Code blocks: a header bar (language, copy) over the code, like a pasted file. */
+.md-code {
+  margin: 4px 0 12px;
+  border: 1px solid var(--bench-line);
+  border-radius: 8px;
+  background: var(--bench-base);
+  overflow: hidden;
+}
+.md .md-code pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  padding: 12px 14px;
+  font-size: 12.5px;
+  line-height: 19px;
+}
+.md-code-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 6px 4px 12px;
+  background: var(--bench-raised);
+  border-bottom: 1px solid var(--bench-line);
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-muted);
+}
+.md-code-note {
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.md-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  padding: 3px 6px;
+  border-radius: 4px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-family: var(--sans);
+}
+.md-copy:hover {
+  color: var(--ink-primary);
+  background: var(--bench-line);
+}
+.md-seg {
+  display: inline-flex;
+  gap: 2px;
+}
+.md-seg button {
+  border: 0;
+  background: transparent;
+  padding: 2px 8px;
+  border-radius: 4px;
+  color: var(--ink-muted);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.md-seg button.on {
+  color: var(--ink-primary);
+  background: var(--bench-line);
+}
+.md-mermaid {
+  padding: 14px;
+  max-height: 520px;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+}
+.md-mermaid svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Syntax colours from the bench palette: copper keywords, green strings, muted comments. */
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-built_in,
+.hljs-type {
+  color: var(--copper-bright);
+}
+.hljs-string,
+.hljs-regexp,
+.hljs-symbol,
+.hljs-template-variable {
+  color: #8fd1a8;
+}
+.hljs-number,
+.hljs-literal,
+.hljs-attr,
+.hljs-attribute {
+  color: #c9a6ec;
+}
+.hljs-title,
+.hljs-title.function_,
+.hljs-section {
+  color: #7fc4e8;
+}
+.hljs-comment,
+.hljs-quote,
+.hljs-meta {
+  color: var(--ink-muted);
+  font-style: italic;
+}
+.hljs-variable,
+.hljs-params,
+.hljs-property {
+  color: var(--ink-primary);
+}
+.hljs-addition {
+  color: var(--status-verified);
+}
+.hljs-deletion {
+  color: var(--status-critical);
+}
+
+/* The agent's reply reads like a document: no bubble, roomier rhythm. The old
+   bubble's purple edge survives as a rail: dim at rest, full agent purple while
+   the reply streams in. */
+.agent-turn .md {
+  line-height: 23px;
+  border-left: 2px solid #6e4e92; /* agentDim */
+  padding-left: 14px;
+  transition: border-color 240ms ease-out;
+}
+.agent-turn.live .md {
+  border-left-color: var(--agent);
+}
+.agent-turn .agent-actions {
+  margin-left: 10px;
+}
+.agent-turn .md p,
+.agent-turn .md ul,
+.agent-turn .md ol,
+.agent-turn .md blockquote {
+  margin-bottom: 12px;
+}
+.agent-turn .md > :last-child,
+.agent-turn .md > :last-child > :last-child {
+  margin-bottom: 0;
+}
+.agent-turn .md h1 {
+  font-size: 19px;
+  margin: 20px 0 8px;
+}
+.agent-turn .md h2 {
+  font-size: 16px;
+  margin: 18px 0 6px;
+}
+.agent-turn .md h3 {
+  font-size: 14px;
+  margin: 14px 0 4px;
+}
+.agent-turn .md > :first-child {
+  margin-top: 0;
+}
+.agent-actions {
+  display: flex;
+  gap: 2px;
+  margin-top: 6px;
+  margin-left: -6px;
+  opacity: 0;
+  transition: opacity 120ms ease-out;
+}
+.agent-turn:hover .agent-actions,
+.agent-actions:focus-within {
+  opacity: 1;
+}

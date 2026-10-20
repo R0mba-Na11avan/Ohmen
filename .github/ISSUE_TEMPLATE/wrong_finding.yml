@@ -1,0 +1,45 @@
+name: Wrong or missed finding
+description: The review flagged something that's fine, or missed a real problem.
+labels: [review-quality]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind
+      options:
+        - False alarm (flagged, but the design is correct)
+        - Missed problem (a real bug it didn't flag)
+        - Right problem, wrong severity or explanation
+    validations:
+      required: true
+  - type: input
+    id: part
+    attributes:
+      label: Part (manufacturer part number)
+      placeholder: "TPS563206DRLR"
+    validations:
+      required: true
+  - type: textarea
+    id: finding
+    attributes:
+      label: The finding
+      description: Its title, severity and source (pattern, ERC/DRC, or an AI reviewer), or what it should have said.
+    validations:
+      required: true
+  - type: textarea
+    id: truth
+    attributes:
+      label: What the datasheet says
+      description: Section, table or page, and a short summary. Please don't paste long passages.
+    validations:
+      required: true
+  - type: textarea
+    id: circuit
+    attributes:
+      label: The relevant circuit
+      description: The pins and nets involved, or a screenshot of that part of the schematic. Share only what you're comfortable making public.
+  - type: input
+    id: model
+    attributes:
+      label: Model and review depth (for AI findings)
+      placeholder: "gemini:gemini-3.8-flash, medium"

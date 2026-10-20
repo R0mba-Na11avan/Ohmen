@@ -1,0 +1,28 @@
+id: ap2112-ldo
+part: AP2112 3.3V LDO
+status: trusted
+datasheet: https://www.diodes.com/assets/Datasheets/AP2112.pdf
+match:
+  value_contains: "AP2112"
+
+checks:
+  - id: en-not-floating
+    rule: pin_connected
+    pinfunction: EN
+    severity: must-fix
+    citation: >-
+      AP2112 datasheet, Pin Description (EN): the enable pin is a logic input with
+      no internal pull and must be driven; tie to VIN for always-on operation.
+    failure_mode: >-
+      A floating EN leaves the LDO in an indeterminate enable state — the 3.3V rail
+      may never come up.
+
+  - id: en-tied-to-vin
+    rule: pins_share_net
+    pinfunction: EN
+    other_pinfunction: VIN
+    severity: verify
+    citation: >-
+      AP2112 datasheet, Application Information: for an always-on regulator EN is
+      tied to VIN. Any other arrangement should be an intentional control signal.
+    failure_mode: "If EN is not tied to VIN and not intentionally driven, the rail enable is unintentional."

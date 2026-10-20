@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <!-- Copper traces on the bench; the pad under review sits inside an agent-purple ohm sign (Ω). -->
+  <rect x="32" y="32" width="960" height="960" rx="216" fill="#0E1512" stroke="#26332D" stroke-width="8"/>
+  <g fill="none" stroke="#D68A4C" stroke-width="56" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M196 352 H420 L588 520 H760"/>
+    <path d="M196 680 H372 L476 784 H760"/>
+  </g>
+  <g fill="#D68A4C">
+    <circle cx="196" cy="352" r="64"/>
+    <circle cx="196" cy="680" r="64"/>
+    <circle cx="760" cy="784" r="64"/>
+    <circle cx="776" cy="520" r="72"/>
+  </g>
+  <g fill="#0E1512">
+    <circle cx="196" cy="352" r="24"/>
+    <circle cx="196" cy="680" r="24"/>
+    <circle cx="760" cy="784" r="24"/>
+    <circle cx="776" cy="520" r="28"/>
+  </g>
+  <path d="M628 646 H712 A141 141 0 1 1 840 646 H924" fill="none" stroke="#A374CE" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

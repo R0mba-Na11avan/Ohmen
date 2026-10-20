@@ -1,0 +1,46 @@
+{
+  "name": "ohmen",
+  "productName": "Ohmen",
+  "version": "0.1.0",
+  "description": "AI design-review copilot for KiCad: schematic review and parts research, grounded in cited datasheets.",
+  "author": {
+    "name": "R0mba-Na11avan",
+    "email": "209275211+R0mba-Na11avan@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "homepage": "https://github.com/R0mba-Na11avan/Ohmen",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/R0mba-Na11avan/Ohmen.git"
+  },
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "gen-types": "node scripts/gen-types.mjs",
+    "dist": "electron-vite build && electron-builder --publish never",
+    "icon": "electron scripts/render-icon.cjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.2",
+    "electron": "^44.9.1",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^2.3.0",
+    "json-schema-to-typescript": "^15.0.3",
+    "lucide-react": "^1.47.0",
+    "mermaid": "^12.0.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
+    "remark-gfm": "^4.0.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.9"
+  }
+}

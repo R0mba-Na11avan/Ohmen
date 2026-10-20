@@ -1,0 +1,54 @@
+# secrets
+.env
+*.env
+.env.*
+!*.env.example
+!.env.example
+
+# node / electron
+node_modules/
+app/out/
+app/dist/
+app/release/
+.vite/
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+build/
+!app/build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# packaged sidecar (PyInstaller output)
+packaging/build/
+packaging/dist/
+
+# vendor datasheets: copyright + binary bloat; fetched on demand
+*.pdf
+evals/.cache/
+
+# kicad backups / autosaves / per-user state
+*-bak
+*.kicad_*-bak
+*-backups/
+*.kicad_prl
+*.lck
+_autosave-*
+fp-info-cache
+.history/
+
+# per-project runtime data the app writes into a KiCad project folder
+.pcb_assistant/
+
+# os / editors / tools
+Thumbs.db
+.DS_Store
+~$*
+.idea/
+.vscode/
+.impeccable/

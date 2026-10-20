@@ -1,0 +1,36 @@
+id: tja1051-can
+part: TJA1051 high-speed CAN transceiver
+status: trusted
+datasheet: https://www.nxp.com/docs/en/data-sheet/TJA1051.pdf
+match:
+  value_contains: "TJA1051"
+
+checks:
+  - id: s-pin-driven
+    rule: pin_connected
+    pinfunction: S
+    severity: must-fix
+    citation: >-
+      TJA1051 datasheet, Table (Pin description, pin 8 S): the mode-select pin must
+      be driven — low (GND) for normal mode, high for silent mode. It must not float.
+    failure_mode: >-
+      A floating S pin gives an undefined operating mode — the transceiver may sit
+      in silent mode and never drive the bus.
+
+  - id: vio-on-3v3
+    rule: pin_on_net
+    pinfunction: VIO
+    expect_net_contains: "3.3"
+    severity: verify
+    citation: >-
+      TJA1051T/3 datasheet, Pin description (VIO): the T/3 variant has a VIO supply
+      pin that must be tied to the 3.3V logic supply so I/O levels match the MCU.
+    failure_mode: "VIO on the wrong rail breaks 3.3V logic-level compatibility with the MCU."
+
+  - id: vcc-on-5v
+    rule: pin_on_net
+    pinfunction: VCC
+    expect_net_contains: "5V"
+    severity: verify
+    citation: "TJA1051 datasheet, Pin description (VCC): the transceiver supply is 5V."
+    failure_mode: "VCC off the 5V rail can leave the transceiver under-supplied / unable to drive the bus."

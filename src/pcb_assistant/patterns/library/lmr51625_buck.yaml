@@ -1,0 +1,31 @@
+id: lmr51625-buck
+part: LMR51625 synchronous buck regulator
+status: trusted
+datasheet: https://www.ti.com/lit/gpn/lmr51625
+match:
+  value_contains: "51625"
+
+checks:
+  - id: en-not-floating
+    rule: pin_connected
+    pinfunction: EN
+    severity: must-fix
+    citation: >-
+      LMR51625 datasheet, Table 5-1 (Pin Functions, EN) and §7.3.3 (Enable):
+      the EN pin must be tied to VIN or a UVLO resistor divider and must not float.
+    failure_mode: >-
+      A floating EN leaves the regulator in an indeterminate enable state, so the
+      buck may never start — a dead output rail that ERC cannot catch.
+
+  - id: en-tied-to-vin
+    rule: pins_share_net
+    pinfunction: EN
+    other_pinfunction: VIN
+    severity: verify
+    citation: >-
+      LMR51625 datasheet §7.3.3 (Enable): tying EN directly to VIN is the standard
+      always-on configuration; any other arrangement should be an intentional UVLO
+      divider, not a mistake.
+    failure_mode: >-
+      If EN is not tied to VIN (and no deliberate UVLO divider is present), the
+      regulator's enable threshold is unintentional.

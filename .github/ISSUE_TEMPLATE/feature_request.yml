@@ -1,0 +1,19 @@
+name: Feature or pattern request
+description: Suggest a feature, or a part that deserves a review pattern.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+      description: Describe the situation in your design work, not only the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What you'd like
+  - type: input
+    id: part
+    attributes:
+      label: For a pattern request, the part and its datasheet link

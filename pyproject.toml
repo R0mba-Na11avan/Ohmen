@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ohmen"
+version = "0.1.0"
+description = "AI design-review copilot for KiCad: schematic review and parts research, grounded in cited datasheets."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "R0mba-Na11avan" }]
+requires-python = ">=3.11"
+keywords = ["kicad", "pcb", "electronics", "schematic", "llm", "eda"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: Manufacturing",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "pydantic>=2.7",
+    "typer>=0.12",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "requests>=2.31",
+    "pypdf>=5.0",
+    "anthropic>=0.40",
+    "google-genai>=0.3",
+    "openai>=1.40",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "httpx>=0.27"]
+server = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",
+    "pydantic-ai-slim[anthropic,google,openai]>=2.46",
+]
+# Freezes the sidecar for the desktop installers (packaging/sidecar.spec).
+packaging = ["pyinstaller>=6.16"]
+
+[project.urls]
+Homepage = "https://github.com/R0mba-Na11avan/Ohmen"
+Issues = "https://github.com/R0mba-Na11avan/Ohmen/issues"
+
+[project.scripts]
+pcb = "pcb_assistant.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"pcb_assistant.patterns" = ["library/*.yaml"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

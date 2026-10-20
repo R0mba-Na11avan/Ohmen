@@ -1,0 +1,51 @@
+# Desktop installers. Build the frozen sidecar first (packaging/sidecar.spec), then:
+#   npm run dist
+appId: io.github.r0mba-na11avan.ohmen
+productName: Ohmen
+copyright: Copyright © 2026 R0mba-Na11avan
+directories:
+  output: release
+  buildResources: build
+files:
+  - out/**
+  - package.json
+extraResources:
+  - from: ../packaging/dist/sidecar
+    to: sidecar
+  - from: ../LICENSE
+    to: LICENSE.txt
+  - from: src/renderer/src/assets/fonts/OFL.txt
+    to: fonts-OFL.txt
+artifactName: ${productName}-${version}-${os}-${arch}.${ext}
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: true
+  license: ../LICENSE
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: rpm
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Development
+  synopsis: AI design-review copilot for KiCad
+  maintainer: R0mba-Na11avan <209275211+R0mba-Na11avan@users.noreply.github.com>
+  desktop:
+    entry:
+      StartupWMClass: Ohmen
+deb:
+  depends: [libsecret-1-0]
+rpm:
+  depends: [libsecret]
+
+publish: null

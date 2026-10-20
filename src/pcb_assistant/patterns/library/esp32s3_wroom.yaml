@@ -1,0 +1,51 @@
+id: esp32s3-wroom
+part: ESP32-S3-WROOM-1 module
+status: trusted
+datasheet: https://www.espressif.com/sites/default/files/documentation/esp32-s3-wroom-1_wroom-1u_datasheet_en.pdf
+match:
+  value_contains: "ESP32-S3"
+
+checks:
+  - id: en-not-floating
+    rule: pin_connected
+    pinfunction: EN
+    severity: must-fix
+    citation: >-
+      ESP32-S3-WROOM-1 datasheet + hardware design guidelines: EN (CHIP_PU) must be
+      pulled up (typ. 10k) with a delay cap; it must not float or the module may not
+      boot reliably.
+    failure_mode: "A floating EN/CHIP_PU leaves the module in an indeterminate reset state — unreliable or no boot."
+
+  - id: en-pullup
+    rule: component_between
+    pinfunction: EN
+    value_contains: "10k"
+    severity: verify
+    citation: "ESP32-S3 hardware design guidelines: EN uses a ~10k pull-up to 3V3 plus a 1uF delay cap (RC reset)."
+    failure_mode: "Missing EN pull-up => no defined power-on reset delay."
+
+  - id: io0-pullup
+    rule: component_between
+    pinfunction: IO0
+    value_contains: "10k"
+    severity: verify
+    citation: "ESP32-S3 hardware design guidelines: IO0 (boot strap) needs a pull-up (typ. 10k) so the module boots to flash by default."
+    failure_mode: "Missing IO0 pull-up can leave the module entering download mode unexpectedly."
+
+  - id: io0-timing-cap-100n
+    rule: component_between
+    pinfunction: IO0
+    value_contains: "100n"
+    severity: must-fix
+    citation: >-
+      ESP32 auto-program circuit: IO0 uses a 100nF cap. A 1uF cap here (as on EN) is
+      too large and breaks the auto-download timing.
+    failure_mode: "A 1uF (instead of 100nF) cap on IO0 defeats the auto-download/reset sequence — can't flash without manual BOOT."
+
+  - id: 3v3-rail
+    rule: pin_on_net
+    pinfunction: 3V3
+    expect_net_contains: "3.3"
+    severity: verify
+    citation: "ESP32-S3-WROOM-1 datasheet, Pin definitions (3V3): module supply is 3.3V."
+    failure_mode: "Module supply off the 3.3V rail is out of spec."

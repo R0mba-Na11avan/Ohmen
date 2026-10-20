@@ -1,0 +1,30 @@
+id: ahct1g125-buffer
+part: 74AHCT1G125 single buffer / level shifter
+status: trusted
+datasheet: https://assets.nexperia.com/documents/data-sheet/74AHC_AHCT1G125.pdf
+match:
+  value_contains: "1G125"
+
+# Pins are addressed by number (SOT-23-5 pinout): 1=OE#, 2=A(in), 3=GND,
+# 4=Y(out), 5=VCC. The symbol does not name pins 1/2/4.
+checks:
+  - id: oe-grounded
+    rule: pin_on_net
+    pin: "1"
+    expect_net_contains: "GND"
+    severity: must-fix
+    citation: >-
+      74AHCT1G125 datasheet, Pin description (OE#, pin 1): output-enable is
+      active-LOW; tie it to GND to enable the buffer. A floating or high OE# leaves
+      the output in high-impedance.
+    failure_mode: "OE# not grounded => output stuck in high-Z => the buffered signal never drives its load."
+
+  - id: vcc-on-5v
+    rule: pin_on_net
+    pin: "5"
+    expect_net_contains: "5V"
+    severity: verify
+    citation: >-
+      74AHCT1G125 datasheet, Pin description (VCC, pin 5). AHCT has TTL input
+      thresholds, so it is typically powered at 5V to shift a 3.3V input up to 5V.
+    failure_mode: "VCC off the intended 5V rail defeats the 3.3V->5V level-shift."

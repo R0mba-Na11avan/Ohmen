@@ -1,0 +1,30 @@
+id: usbc-cc-pulldowns
+part: USB-C receptacle (sink) CC configuration
+status: trusted
+datasheet: https://www.usb.org/document-library/usb-type-cr-cable-and-connector-specification-release-22
+# CC pins on this 14-pin receptacle: A5 = CC1, B5 = CC2.
+match:
+  value_contains: "USB_C"
+
+checks:
+  - id: cc1-pulldown
+    rule: component_between
+    pin: "A5"
+    value_contains: "5.1k"
+    severity: must-fix
+    citation: >-
+      USB Type-C spec: a sink presents Rd = 5.1k from each CC pin to GND. CC1 (A5)
+      needs its own 5.1k pulldown.
+    failure_mode: >-
+      Without a 5.1k on CC1 the source never detects the sink in this orientation —
+      no VBUS is supplied (dead on one plug orientation).
+
+  - id: cc2-pulldown
+    rule: component_between
+    pin: "B5"
+    value_contains: "5.1k"
+    severity: must-fix
+    citation: >-
+      USB Type-C spec: a sink needs an INDEPENDENT 5.1k Rd on each CC line. CC2 (B5)
+      needs its own 5.1k pulldown (not shared with CC1).
+    failure_mode: "A missing/shared CC2 pulldown breaks detection in the other plug orientation."
