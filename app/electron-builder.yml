@@ -37,6 +37,8 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
+  # hicolor only indexes sizes up to 512px, so a lone 1024px icon never resolves.
+  icon: build/icons
   category: Development
   synopsis: AI design-review copilot for KiCad
   maintainer: R0mba-Na11avan <209275211+R0mba-Na11avan@users.noreply.github.com>
