@@ -1,0 +1,102 @@
+<!doctype html>
+<!-- Source for ohmen-social-1280x640.png and ohmen-header-1500x500.png. Render: msedge --headless --hide-scrollbars --allow-file-access-from-files --window-size=1280,640 --screenshot=out.png banner.html (append ?size=wide at 1500,500). -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: Plex Sans; font-weight: 400; src: url(../../app/src/renderer/src/assets/fonts/plex-sans-400.woff2); }
+  @font-face { font-family: Plex Sans; font-weight: 500; src: url(../../app/src/renderer/src/assets/fonts/plex-sans-500.woff2); }
+  @font-face { font-family: Plex Sans; font-weight: 600; src: url(../../app/src/renderer/src/assets/fonts/plex-sans-600.woff2); }
+  @font-face { font-family: Plex Mono; font-weight: 400; src: url(../../app/src/renderer/src/assets/fonts/plex-mono-400.woff2); }
+  @font-face { font-family: Plex Mono; font-weight: 500; src: url(../../app/src/renderer/src/assets/fonts/plex-mono-500.woff2); }
+  :root {
+    --void: #0a0f0d; --base: #0e1512; --line: #26332d; --line-strong: #35453d;
+    --ink: #e4eae6; --ink2: #9fb0a8; --muted: #6b7c74;
+    --copper: #d68a4c; --agent: #a374ce; --ok: #46c88a;
+  }
+  html, body { margin: 0; background: var(--void); }
+  body { width: var(--w); height: var(--h); overflow: hidden; position: relative; font-family: Plex Sans, sans-serif; color: var(--ink); }
+  .grid { position: absolute; inset: 0;
+    background-image: radial-gradient(circle, #1a2520 1.4px, transparent 1.6px);
+    background-size: 32px 32px; background-position: 16px 16px;
+    mask-image: linear-gradient(90deg, transparent 0%, #000 45%, #000 100%); }
+  .glow { position: absolute; width: 760px; height: 760px; right: -220px; top: 50%; transform: translateY(-50%);
+    background: radial-gradient(circle, rgba(163,116,206,.13), transparent 62%); }
+  svg.board { position: absolute; right: 0; top: 0; height: 100%; }
+  .copy { position: absolute; left: var(--pad); top: 50%; transform: translateY(-50%); }
+  .brand { display: flex; align-items: center; gap: 26px; }
+  .brand img { width: var(--logo); height: var(--logo); }
+  h1 { margin: 0; font-weight: 600; font-size: var(--title); letter-spacing: -0.02em; line-height: 1; }
+  .tag { margin: 28px 0 0; font-size: var(--tagsize); font-weight: 500; color: var(--ink); max-width: 640px; line-height: 1.25; }
+  .tag em { font-style: normal; color: var(--copper); }
+  .sub { margin: 14px 0 0; font-size: var(--subsize); color: var(--ink2); }
+  .foot { margin-top: 34px; display: flex; gap: 10px; flex-wrap: wrap; font-family: Plex Mono, monospace; font-size: 15px; }
+  .chip { border: 1px solid var(--line-strong); border-radius: 6px; padding: 5px 10px; color: var(--ink2); background: rgba(14,21,18,.8); }
+  .chip.agent { color: var(--agent); border-color: rgba(163,116,206,.45); }
+  .url { position: absolute; left: var(--pad); bottom: 30px; font-family: Plex Mono, monospace; font-size: 15px; color: var(--muted); }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="glow"></div>
+
+  <!-- Traces converge on a pad under review, ringed by the agent-purple ohm sign, as in the logo. -->
+  <svg class="board" viewBox="0 0 640 640" preserveAspectRatio="xMaxYMid meet" xmlns="http://www.w3.org/2000/svg">
+    <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <g stroke="#3b2a1d" stroke-width="10">
+        <path d="M60 96 H250 L330 176 H520"/>
+        <path d="M200 580 H320 L380 520 H560"/>
+        <path d="M600 40 V120 L560 160"/>
+      </g>
+      <g stroke="#d68a4c" stroke-width="14">
+        <path d="M150 236 H250 L330 316 H404"/>
+        <path d="M190 452 H264 L330 386 H404"/>
+      </g>
+    </g>
+    <g fill="#d68a4c">
+      <circle cx="150" cy="236" r="17"/><circle cx="190" cy="452" r="17"/>
+      <rect x="404" y="318" width="44" height="76" rx="8"/>
+    </g>
+    <g fill="#3b2a1d">
+      <circle cx="60" cy="96" r="12"/><circle cx="520" cy="176" r="12"/>
+      <circle cx="200" cy="580" r="12"/><circle cx="560" cy="520" r="12"/>
+    </g>
+    <g fill="#0a0f0d"><circle cx="150" cy="236" r="6"/><circle cx="190" cy="452" r="6"/></g>
+    <!-- ohm sign around the pad -->
+    <path d="M362 452 H392 A86 86 0 1 1 460 452 H490" fill="none" stroke="#a374ce" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+    <!-- finding callout -->
+    <g transform="translate(452 206)">
+      <path d="M22 60 L-2 108" stroke="#a374ce" stroke-width="2" opacity=".7"/>
+      <rect width="150" height="60" rx="8" fill="#0e1512" stroke="#35453d"/>
+      <circle cx="18" cy="20" r="5" fill="#46c88a"/>
+      <text x="32" y="25" font-family="Plex Mono" font-size="13" fill="#e4eae6">VIN ≤ 65 V</text>
+      <text x="14" y="46" font-family="Plex Mono" font-size="11" fill="#6b7c74">datasheet p.4 ✓</text>
+    </g>
+  </svg>
+
+  <div class="copy">
+    <div class="brand">
+      <img src="logo.svg" alt="">
+      <h1>Ohmen</h1>
+    </div>
+    <p class="tag">AI design-review copilot for <em>KiCad</em></p>
+    <p class="sub">Schematic review and parts research, grounded in cited datasheets.</p>
+    <div class="foot">
+      <span class="chip">open source · MIT</span>
+      <span class="chip">Windows + Linux</span>
+      <span class="chip agent">Claude · Gemini · GPT · local</span>
+    </div>
+  </div>
+  <div class="url">github.com/R0mba-Na11avan/Ohmen</div>
+
+  <script>
+    const p = new URLSearchParams(location.search);
+    const wide = p.get('size') === 'wide';
+    const s = document.documentElement.style;
+    const v = wide
+      ? { w: '1500px', h: '500px', pad: '96px', logo: '92px', title: '88px', tagsize: '32px', subsize: '21px' }
+      : { w: '1280px', h: '640px', pad: '88px', logo: '104px', title: '100px', tagsize: '36px', subsize: '22px' };
+    for (const k in v) s.setProperty('--' + k, v[k]);
+  </script>
+</body>
+</html>
