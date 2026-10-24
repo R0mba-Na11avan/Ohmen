@@ -41,7 +41,7 @@ def merge_progress(row: dict[str, Any], ev: dict[str, Any]) -> None:
         row.setdefault("steps", []).append(f"⚑ {ev.get('summary', '')}")
         row["last"] = ev.get("summary")
     elif status == "usage":
-        for k in ("requests", "tokens_in", "tokens_cached", "tokens_out"):
+        for k in ("requests", "tokens_in", "tokens_cached", "tokens_cache_write", "tokens_out"):
             if ev.get(k) is not None:
                 row[k] = ev[k]
 
@@ -262,6 +262,7 @@ async def run_agent_stream(
     thinking_parts: list[str] = []
     tools: list[dict[str, Any]] = []
     final_messages = None
+    run_result = None
 
     try:
         if sid:  # tell the client which session this landed in (esp. a fresh one)
@@ -328,9 +329,23 @@ async def run_agent_stream(
                         yield frame
                 elif type(ev).__name__ == "AgentRunResultEvent":
                     final_messages = ev.result.all_messages()
+                    run_result = ev.result
         finally:
             pumper.cancel()
 
+        usage = None
+        if run_result is not None:
+            from pydantic_ai.messages import ModelResponse
+
+            from pcb_assistant.agent import usage_log
+
+            responses = [m for m in run_result.new_messages() if isinstance(m, ModelResponse)]
+            usage = usage_log.record(
+                project, "chat", usage_log.from_run_usage(run_result.usage(), responses), route="api",
+                model=model_spec, effort=effort, tool_calls=sum(1 for t in tools if t["kind"] == "call"),
+                history_chars=len(json.dumps(prior)) if prior else 0,
+            )
+            yield {"type": "usage", **usage}
         if chats and sid:
             msgs_json = (
                 ModelMessagesTypeAdapter.dump_python(final_messages, mode="json")
@@ -340,7 +355,7 @@ async def run_agent_stream(
             chats.record(
                 sid,
                 {"q": message, "a": "".join(answer_parts), "thinking": "".join(thinking_parts).strip(),
-                 "tools": tools, "team": list(team.values()), "images": attached},
+                 "tools": tools, "team": list(team.values()), "images": attached, "usage": usage},
                 msgs_json,
             )
         yield {"type": "done"}

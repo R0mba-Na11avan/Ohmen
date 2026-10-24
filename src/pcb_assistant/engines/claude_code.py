@@ -179,6 +179,10 @@ def _drive(
     return parser.finish(proc.returncode, "".join(stderr))
 
 
+def _input_tokens(u: dict[str, Any]) -> int:
+    return sum(int(u.get(k) or 0) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+
+
 class StreamParser:
     """Folds `claude -p --output-format stream-json` lines into an EngineResult."""
 
@@ -188,6 +192,9 @@ class StreamParser:
         self.parts: list[str] = []
         self.result: dict[str, Any] | None = None
         self.rate_limit: dict[str, Any] | None = None
+        # Per model request (message id -> its usage): partial messages repeat a
+        # message once per content block, so the last copy wins.
+        self.request_usage: dict[str, dict[str, Any]] = {}
 
     def _emit(self, ev: dict[str, Any]) -> None:
         if self.on_event:
@@ -218,6 +225,10 @@ class StreamParser:
                 # A new text block after a tool call: keep the answer readable.
                 self.parts.append("\n\n")
                 self._emit({"type": "token", "text": "\n\n"})
+        elif kind == "assistant" and msg.get("parent_tool_use_id") is None:
+            m = msg.get("message") or {}
+            if m.get("id") and m.get("usage"):
+                self.request_usage[m["id"]] = m["usage"]
         elif kind == "rate_limit_event":
             info = msg.get("rate_limit_info") or {}
             window = info.get("rateLimitType") or "five_hour"
@@ -240,11 +251,14 @@ class StreamParser:
             raise EngineError(f"Claude Code failed: {detail}")
         u = r.get("usage") or {}
         cached = int(u.get("cache_read_input_tokens") or 0)
+        written = int(u.get("cache_creation_input_tokens") or 0)
         usage = Usage(
             requests=int(r.get("num_turns") or 1),
-            tokens_in=int(u.get("input_tokens") or 0) + int(u.get("cache_creation_input_tokens") or 0) + cached,
+            tokens_in=int(u.get("input_tokens") or 0) + written + cached,
             tokens_cached=cached,
             tokens_out=int(u.get("output_tokens") or 0),
+            tokens_cache_write=written,
+            max_context=max((_input_tokens(x) for x in self.request_usage.values()), default=0),
         )
         text = "".join(self.parts).strip() or str(r.get("result") or "")
         return EngineResult(text=text, session_id=self.session_id, usage=usage, rate_limit=self.rate_limit)

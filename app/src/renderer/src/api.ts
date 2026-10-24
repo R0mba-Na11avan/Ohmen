@@ -308,6 +308,7 @@ export interface ReviewerRow {
   requests?: number
   tokens_in?: number
   tokens_cached?: number
+  tokens_cache_write?: number
   tokens_out?: number
   t0?: number // client clock when it started, for the live timer (not persisted)
 }
@@ -326,6 +327,7 @@ export interface ReviewProgress {
   requests?: number
   tokens_in?: number
   tokens_cached?: number
+  tokens_cache_write?: number
   tokens_out?: number
 }
 
@@ -338,6 +340,17 @@ export interface ChatTurn {
   images?: ChatImage[]
   error?: string | null
   stopped?: boolean
+  usage?: TurnUsage | null
+}
+
+// What a chat turn cost, as the sidecar logs it (.pcb_assistant/usage.jsonl).
+export interface TurnUsage {
+  requests: number
+  tokens_fresh: number // input neither read from nor written to the prompt cache
+  tokens_cache_write: number
+  tokens_cached: number
+  tokens_out: number
+  max_context: number // the largest single request's input
 }
 export interface ChatSessionDetail {
   id: string
@@ -385,6 +398,7 @@ export interface ChatHandlers {
   onDiagram?(mermaid: string, note: string): void
   onNotice?(text: string): void
   onRateLimit?(info: RateLimitInfo): void
+  onUsage?(usage: TurnUsage): void
   onDone?(): void
   onError?(detail: string, info?: ChatErrorInfo): void
 }
@@ -470,6 +484,11 @@ export async function streamChat(
       case 'rate_limit':
         h.onRateLimit?.({ utilization: f.utilization ?? null, resets_at: f.resets_at ?? null, window: f.window })
         break
+      case 'usage': {
+        const { type: _type, ...usage } = f
+        h.onUsage?.(usage)
+        break
+      }
       case 'done':
         end()
         break

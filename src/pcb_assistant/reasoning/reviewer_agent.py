@@ -640,6 +640,7 @@ def run_reviewer(
         usage.incr(audit_usage)
 
     _report_usage(progress, name, usage)
+    _log_usage(project_dir, name, model_spec, len(targets), usage)
     log.info("reviewer %s: %d parts, %d findings, %d steps, %d requests, %d in / %d cached / %d out tokens, %.1fs",
              name, len(targets), len(run.findings), run.steps, usage.requests, usage.input_tokens,
              usage.cache_read_tokens, usage.output_tokens, time.monotonic() - t0)
@@ -731,6 +732,7 @@ def _run_on_engine(
             ))
 
     _report_usage_engine(progress, name, usage)
+    _log_usage(project_dir, name, model_spec, len(targets), usage)
     log.info("reviewer %s (subscription): %d parts, %d findings, %d steps, %.1fs",
              name, len(targets), len(run.findings), run.steps, time.monotonic() - t0)
     return run.findings
@@ -740,14 +742,23 @@ def _report_usage_engine(progress: Progress | None, name: str, usage) -> None:
     if progress:
         progress({"reviewer": name, "status": "usage", "requests": usage.requests,
                   "tokens_in": usage.tokens_in, "tokens_cached": usage.tokens_cached,
-                  "tokens_out": usage.tokens_out})
+                  "tokens_cache_write": usage.tokens_cache_write, "tokens_out": usage.tokens_out})
 
 
 def _report_usage(progress: Progress | None, name: str, usage) -> None:
-    if progress:
-        progress({"reviewer": name, "status": "usage", "requests": usage.requests,
-                  "tokens_in": usage.input_tokens + usage.cache_read_tokens + usage.cache_write_tokens,
-                  "tokens_cached": usage.cache_read_tokens, "tokens_out": usage.output_tokens})
+    from pcb_assistant.agent.usage_log import from_run_usage
+
+    _report_usage_engine(progress, name, from_run_usage(usage))
+
+
+def _log_usage(project_dir: str | Path, name: str, model_spec: str, parts: int, usage) -> None:
+    """One usage-log line per reviewer run (a RunUsage or an engine Usage)."""
+    from pcb_assistant.agent import usage_log
+    from pcb_assistant.engines.base import Usage
+
+    if not isinstance(usage, Usage):
+        usage = usage_log.from_run_usage(usage)
+    usage_log.record(project_dir, "reviewer", usage, reviewer=name, model=model_spec, parts=parts)
 
 
 def auditable_refs(design: Design) -> list[str]:
