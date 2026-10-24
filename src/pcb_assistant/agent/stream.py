@@ -12,6 +12,7 @@ from pcb_assistant.agent.agent import (
     FOOTPRINT_TOOLS,
     REVIEW_TOOLS,
     build_agent,
+    system_prompt,
 )
 from pcb_assistant.agent.chat_images import image_path, media_type_of
 from pcb_assistant.agent.chats import ChatStore
@@ -201,9 +202,10 @@ async def run_agent_stream(
     images: list[dict[str, Any]] | None = None,
     review_depth: str = "low",
     effort: str = "high",
+    condense: tuple[str, int | None] | None = None,
 ) -> AsyncIterator[dict[str, Any]]:
-    """Yield frames: session / thinking / token / tool_call / tool_result /
-    review_progress / bom / findings / diagram / done / error.
+    """Yield frames: session / condensed / thinking / token / tool_call /
+    tool_result / review_progress / bom / findings / diagram / done / error.
 
     `state` is the sidecar AppState. Conversation history lives in the per-project
     ChatStore keyed by `chat_id` (a new session is created if none is given); the
@@ -228,6 +230,20 @@ async def run_agent_stream(
     sid = chats.ensure(chat_id) if chats else None
 
     from pcb_assistant.engines.config import engine_of
+
+    if chats and sid and condense:  # a long or long-idle chat starts this turn from a summary
+        from pcb_assistant.agent import condense as condensing
+
+        limit = condensing.threshold(condense[0], condense[1], _context_tokens(model_spec))
+        session = chats.get(sid) or {}
+        reason = condensing.due(session, limit)
+        if reason:
+            yield {"type": "session", "chat_id": sid}
+            yield {"type": "condensing"}
+            system_chars = len(system_prompt(project, state.design, review_depth))
+            event = await condensing.condense(chats, sid, model_spec, limit, reason, system_chars)
+            if event:
+                yield {"type": "condensed", **event}
 
     if engine_of(model_spec) is not None:  # a subscription CLI runs this turn
         from pcb_assistant.agent.engine_stream import run_engine_stream

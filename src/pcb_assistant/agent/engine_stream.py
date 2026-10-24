@@ -17,6 +17,7 @@ from typing import Any, AsyncIterator
 
 from pcb_assistant.agent.chat_images import image_path
 from pcb_assistant.agent.chats import ChatStore
+from pcb_assistant.agent.condense import seed as condense_seed
 from pcb_assistant.agent.stream import follow_up_frames, merge_progress, record_stopped
 
 SEED_TURNS = 12
@@ -100,8 +101,12 @@ async def run_engine_stream(
     cancel = threading.Event()
     resumed = resume is not None  # cleared if the resume fails and a fresh session starts
 
+    condensed = (chats.get(sid) or {}).get("condensed") if chats and sid else None
+
     def work(session: str | None):
-        prompt = message if session else seed_transcript(transcript) + message
+        # a fresh session starts from the chat's summary when it has one
+        opening = condense_seed(condensed, transcript) if condensed else seed_transcript(transcript)
+        prompt = message if session else opening + message
         return dispatch.run(
             model_spec, system, prompt, toolset=toolset,
             on_event=lambda e: put("event", e), on_tool=lambda e: put("event", e),

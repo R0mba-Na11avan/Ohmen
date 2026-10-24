@@ -22,8 +22,8 @@ load_dotenv()
 
 PROVIDERS = ("claude", "gemini", "openai", "local")
 
-# Per-model capability overrides for local models: {model_id: {"tools": bool, "vision": bool}}
-Overrides = dict[str, dict[str, bool]]
+# Per-model overrides for local models: {model_id: {"tools": bool, "vision": bool, "context": tokens}}
+Overrides = dict[str, dict[str, bool | int]]
 
 
 @dataclass(frozen=True)

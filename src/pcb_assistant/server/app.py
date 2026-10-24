@@ -711,6 +711,24 @@ def create_app(token: str | None = None) -> FastAPI:
             raise HTTPException(404, f"no chat {chat_id}")
         return detail
 
+    @app.post("/chats/{chat_id}/condense")
+    async def chats_condense(chat_id: str, req: dict) -> dict:
+        """Condense now (the chat menu): summarize all but the latest turns."""
+        from pcb_assistant.agent import condense
+        from pcb_assistant.agent.chats import ChatStore
+        from pcb_assistant.agent.stream import _context_tokens
+
+        chats = ChatStore.for_project(_require_project())
+        if chats.get(chat_id) is None:
+            raise HTTPException(404, f"no chat {chat_id}")
+        model = req.get("model") or DEFAULT_MODEL
+        level, custom = _condense(req)
+        limit = condense.threshold("normal" if level == "off" else level, custom, _context_tokens(model))
+        event = await condense.condense(chats, chat_id, model, limit, "manual")
+        if event is None:
+            raise HTTPException(409, "Nothing to condense yet: the chat is only its latest turns.")
+        return event
+
     @app.delete("/chats/{chat_id}", response_model=schemas.OkResponse)
     def chats_delete(chat_id: str) -> schemas.OkResponse:
         from pcb_assistant.agent.chats import ChatStore
@@ -735,6 +753,7 @@ def create_app(token: str | None = None) -> FastAPI:
                 images = req.get("images") or []
                 depth = _depth(req.get("review_depth"))
                 effort = _effort(req.get("effort"))
+                condense = _condense(req)
                 try:
                     cap = capability(model)
                 except Exception:
@@ -752,7 +771,7 @@ def create_app(token: str | None = None) -> FastAPI:
                     continue
                 async def relay() -> None:
                     async for frame in run_agent_stream(
-                        STATE, message, model, chat_id, images, depth, effort=effort
+                        STATE, message, model, chat_id, images, depth, effort=effort, condense=condense
                     ):
                         await ws.send_json(frame)
 
@@ -889,6 +908,14 @@ def _require_project():
 def _depth(value) -> str:
     """Review depth from the Settings slider; anything unknown means 'low'."""
     return value if value in ("low", "medium", "high") else "low"
+
+
+def _condense(req: dict) -> tuple[str, int | None]:
+    """Condense setting from Settings > General; anything unknown means 'normal'."""
+    level = req.get("condense")
+    custom = req.get("condense_at")
+    return (level if level in ("off", "normal", "aggressive", "custom") else "normal",
+            int(custom) if isinstance(custom, (int, float)) else None)
 
 
 def _effort(value) -> str:
