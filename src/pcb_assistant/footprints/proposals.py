@@ -38,6 +38,7 @@ class FootprintProposal(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     stock: list[str] = Field(default_factory=list)
     kicad_mod: str
+    preview_svg: str = ""  # the card's drawing (footprints/svg.py)
     status: Literal["pending", "accepted", "rejected"] = "pending"
     created_at: float = 0.0
     file: str | None = None  # relative to the project, once accepted
@@ -96,6 +97,7 @@ class FootprintStore:
 def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnings: list[str],
             stock: list[str]) -> FootprintProposal:
     from pcb_assistant.footprints.spec import dims
+    from pcb_assistant.footprints.svg import drawing
 
     rows = [{"name": k, "min": d.min, "nom": d.nom, "max": d.max, "source": d.source} for k, d in dims(spec).items()]
     data = spec.model_dump()
@@ -104,7 +106,7 @@ def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnin
     return FootprintStore(project_dir).add(FootprintProposal(
         id=uuid.uuid4().hex[:10], part=part, name=fp.name, family=spec.family, package=spec.package,
         drawing=spec.drawing, spec=data, dims=rows, pads=pads, warnings=warnings, stock=stock,
-        kicad_mod=kicad_mod, created_at=time.time(),
+        kicad_mod=kicad_mod, preview_svg=drawing(fp), created_at=time.time(),
     ))
 
 

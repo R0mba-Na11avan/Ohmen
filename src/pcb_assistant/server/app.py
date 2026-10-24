@@ -511,14 +511,16 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/footprints/{pid}")
     def footprint_get(pid: str) -> dict:
         p = _footprint(pid)
-        return p.model_dump(exclude={"kicad_mod"})
+        return p.model_dump(exclude={"kicad_mod", "preview_svg"})
 
     @app.get("/footprints/{pid}/preview.svg")
     def footprint_preview(pid: str) -> Response:
         from pcb_assistant.footprints.proposals import render_svg
 
         p = _footprint(pid)
-        try:
+        if p.preview_svg:
+            return Response(p.preview_svg, media_type="image/svg+xml")
+        try:  # proposals from before Ohmen drew its own
             return Response(render_svg(p.kicad_mod, p.name), media_type="image/svg+xml")
         except (OSError, RuntimeError, subprocess.SubprocessError) as e:
             raise HTTPException(503, f"couldn't draw the preview: {e}") from None
@@ -529,7 +531,7 @@ def create_app(token: str | None = None) -> FastAPI:
 
         _footprint(pid)
         try:
-            return FootprintStore(_require_project()).accept(pid).model_dump(exclude={"kicad_mod"})
+            return FootprintStore(_require_project()).accept(pid).model_dump(exclude={"kicad_mod", "preview_svg"})
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
 
@@ -538,7 +540,7 @@ def create_app(token: str | None = None) -> FastAPI:
         from pcb_assistant.footprints.proposals import FootprintStore
 
         _footprint(pid)
-        return FootprintStore(_require_project()).reject(pid).model_dump(exclude={"kicad_mod"})
+        return FootprintStore(_require_project()).reject(pid).model_dump(exclude={"kicad_mod", "preview_svg"})
 
     # --- datasheet library (<project>/datasheets/) ---
 
