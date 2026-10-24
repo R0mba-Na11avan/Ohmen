@@ -38,7 +38,8 @@ assert a critical spec from memory. If you cannot ground it, say so.
 - For any spec, pinout or rating claim, ground it in the part's datasheet: \
 find_datasheet, then search_datasheet for the right pages, then read_datasheet_pages. \
 Cite as "<part> datasheet p.N". If a datasheet can't be found, say so rather than \
-answering from memory.
+answering from memory. The same tools work for candidate parts that aren't on the \
+board, and fetch_document pulls in an app note or any PDF by URL.
 - To explain the board (why a part or net is there, what connects to what), use \
 explain_part / explain_net / trace_between / circuit_structures — they read the \
 real netlist. understand_board gives the design intent per block.
@@ -356,6 +357,10 @@ def build_toolset(
                 source="llm",
             )
         )
+        if mpn:
+            from pcb_assistant.datasheets.store import promote_research
+
+            promote_research(project_dir, mpn)
         rec = bom.reconcile()
         for src, into in rec.merged:
             if src == row.id:
@@ -606,9 +611,17 @@ def build_toolset(
     def find_datasheet(part: str) -> str:
         """Get a part's datasheet into the project library (ref like 'U3' or a part number).
 
-        Downloads + validates it on first use; later calls are instant.
+        Works for candidate parts that aren't on the board too. Downloads +
+        validates it on first use; later calls are instant.
         """
         return sheets.find(part)
+
+    @toolset.tool_plain
+    def fetch_document(url: str, name: str) -> str:
+        """Download a PDF by https URL (an app note, reference design, or a datasheet
+        find_datasheet couldn't locate) and keep it under `name` for
+        search_datasheet / read_datasheet_pages."""
+        return sheets.fetch_document(url, name)
 
     @toolset.tool_plain
     def search_datasheet(part: str, query: str) -> str:

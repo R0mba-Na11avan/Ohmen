@@ -4,11 +4,17 @@ PDFs live where the designer can see them â€” `<project>/datasheets/<key>.pdf` â
 and the index (where each came from, what was tried) plus the page-text cache
 live in `.pcb_assistant/`. `find` is cache-first: a part is fetched once, and a
 file the user dropped in by hand always wins.
+
+Documents the agent pulls in while researching (candidate parts that aren't on
+the board, app notes by URL) go to the hidden `datasheets/.research/` folder and
+stay out of the Datasheets tab. Once such a part is placed or added to the BOM,
+`promote` moves its datasheet up into the main folder.
 """
 from __future__ import annotations
 
 import hashlib
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Literal
@@ -21,6 +27,8 @@ from pcb_assistant.datasheets.sources import RESOLVERS
 from pcb_assistant.jsonio import lock_for, read_json, write_bytes, write_json
 
 Status = Literal["ok", "missing", "mismatch"]
+Origin = Literal["board", "research"]
+RESEARCH_DIR = ".research"
 
 
 class Attempt(BaseModel):
@@ -40,16 +48,36 @@ class DatasheetEntry(BaseModel):
     pages: int = 0
     tried: list[Attempt] = Field(default_factory=list)
     fetched_at: float = 0.0
+    origin: Origin = "board"  # research: pulled in by the agent, kept in datasheets/.research/
 
 
 def _safe_name(key: str) -> str:
     return re.sub(r"[^A-Za-z0-9._-]+", "_", key).strip("_") or "part"
 
 
+def promote_research(project_dir: str | Path, mpn: str) -> None:
+    """A part went onto the BOM: move its researched datasheet, if any, into the
+    main folder."""
+    lib = DatasheetLibrary.for_project(project_dir)
+    key = lib.research_key(mpn)
+    if key is not None:
+        lib.promote(key)
+
+
+def _hide(path: Path) -> None:
+    """Windows ignores the dot prefix: set the hidden attribute too."""
+    if sys.platform == "win32":
+        import ctypes
+
+        FILE_ATTRIBUTE_HIDDEN = 0x2
+        ctypes.windll.kernel32.SetFileAttributesW(str(path), FILE_ATTRIBUTE_HIDDEN)
+
+
 class DatasheetLibrary:
     def __init__(self, project_dir: str | Path):
         self.project = Path(project_dir)
         self.folder = self.project / "datasheets"
+        self.research_folder = self.folder / RESEARCH_DIR
         self.meta = self.project / ".pcb_assistant"
         self.index_path = self.meta / "datasheets.json"
         self.text_cache = self.meta / "datasheet_text"
@@ -87,21 +115,29 @@ class DatasheetLibrary:
     # --- adding files ---
 
     def _store(self, part: PartRef, pdf: bytes, source: str, url: str | None,
-               tried: list[Attempt]) -> DatasheetEntry:
+               tried: list[Attempt], origin: Origin = "board") -> DatasheetEntry:
         pages = text.page_count(pdf)
         with lock_for(self.index_path):
             entries = self._load()
-            path = self.folder / self._file_name(part.key, entries)
+            path = self._folder_for(origin) / self._file_name(part.key, entries)
             write_bytes(path, pdf)
             entry = DatasheetEntry(
                 key=part.key, refs=part.refs, status="ok",
                 file=path.relative_to(self.project).as_posix(),
                 source=source, url=url, sha256=hashlib.sha256(pdf).hexdigest(),
-                pages=pages, tried=tried, fetched_at=time.time(),
+                pages=pages, tried=tried, fetched_at=time.time(), origin=origin,
             )
             entries[part.key] = entry
             self._save(entries)
         return entry
+
+    def _folder_for(self, origin: Origin) -> Path:
+        if origin == "board":
+            return self.folder
+        if not self.research_folder.is_dir():
+            self.research_folder.mkdir(parents=True)
+            _hide(self.research_folder)
+        return self.research_folder
 
     def _file_name(self, key: str, entries: dict[str, DatasheetEntry]) -> str:
         """`<part>.pdf`, unless another part's datasheet already has that name
@@ -131,10 +167,13 @@ class DatasheetLibrary:
 
     # --- fetching ---
 
-    def find(self, part: PartRef, refresh: bool = False) -> DatasheetEntry:
-        """The part's datasheet: cached, else tried source by source until one fits."""
+    def find(self, part: PartRef, refresh: bool = False, origin: Origin = "board") -> DatasheetEntry:
+        """The part's datasheet: cached, else tried source by source until one fits.
+        A board part whose datasheet was found while researching is promoted."""
         cached = self.get(part.key)
         if cached and cached.status == "ok" and not refresh:
+            if cached.origin == "research" and origin == "board":
+                return self.promote(part.key) or cached
             return cached
 
         tried: list[Attempt] = []
@@ -162,7 +201,7 @@ class DatasheetLibrary:
                     ))
                     mismatched = mismatched or (source, final, pdf)
                     continue
-                return self._store(part, pdf, source, final, tried)
+                return self._store(part, pdf, source, final, tried, origin)
 
         # Some vendors (NXP, onsemi) answer scripts with 404/403 but serve a real
         # browser fine: retry the URLs that failed outright through the app's one.
@@ -174,19 +213,59 @@ class DatasheetLibrary:
                     tried.append(Attempt(source=f"{a.source}+browser", url=a.url, error=str(e)))
                     continue
                 if fetch.is_pdf(pdf) and fetch.matches_part(pdf, part.key):
-                    return self._store(part, pdf, a.source, a.url, tried)
+                    return self._store(part, pdf, a.source, a.url, tried, origin)
                 tried.append(Attempt(source=f"{a.source}+browser", url=a.url,
                                      error="browser got no matching PDF"))
 
         entry = DatasheetEntry(
             key=part.key, refs=part.refs,
-            status="mismatch" if mismatched else "missing", tried=tried,
+            status="mismatch" if mismatched else "missing", tried=tried, origin=origin,
         )
         with lock_for(self.index_path):
             entries = self._load()
             entries[part.key] = entry
             self._save(entries)
         return entry
+
+    def add_document(self, key: str, url: str, guard=None) -> DatasheetEntry:
+        """Any PDF by URL (an app note, a reference design, a datasheet the
+        resolvers can't find), kept for research under `key`. `guard(url)` raises
+        ValueError for a URL that mustn't be used, including where it redirected."""
+        try:
+            pdf, final = fetch.download(url, key)
+        except fetch.FetchError:
+            if not fetch.browser_available():
+                raise
+            pdf, final = fetch.browser_fetch(url), url
+        if guard is not None:
+            guard(final)
+        if not fetch.is_pdf(pdf):
+            raise fetch.FetchError(f"{url}: not a PDF")
+        return self._store(PartRef(key=key), pdf, "url", final, [], "research")
+
+    def promote(self, key: str) -> DatasheetEntry | None:
+        """Move a researched datasheet into the main folder (the part is now on
+        the board or the BOM). None if there's no researched copy."""
+        with lock_for(self.index_path):
+            entries = self._load()
+            e = entries.get(key)
+            if not e or e.origin != "research":
+                return None
+            if e.status == "ok" and e.file and (self.project / e.file).is_file():
+                src = self.project / e.file
+                dst = self.folder / src.name
+                if dst.exists():  # the main folder has its own file by that name
+                    dst = self.folder / f"{src.stem}-{hashlib.sha1(key.encode()).hexdigest()[:6]}.pdf"
+                src.replace(dst)
+                e.file = dst.relative_to(self.project).as_posix()
+            e.origin = "board"
+            self._save(entries)
+            return e
+
+    def research_key(self, name: str) -> str | None:
+        """The stored key a name refers to among researched documents (any case)."""
+        n = name.strip().upper()
+        return next((k for k, e in self._load().items() if e.origin == "research" and k.upper() == n), None)
 
     # --- reading ---
 
