@@ -4,6 +4,27 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Footprints generated from a datasheet's package drawing (SOIC/SOT/QFP, DFN/QFN,
+  chip parts, pin headers, or an explicit land pattern), with IPC-7351B land
+  math. The agent asks first, and nothing is written until you accept the card,
+  which shows a preview and every dimension with its datasheet page. Accepted
+  footprints go to `ohmen.pretty`, registered in the project's library table.
+- DigiKey search and part lookup tools for the agent, and parts research that
+  picks candidates from real DigiKey results instead of memory.
+- The agent can read datasheets for parts that aren't on the board, and any PDF
+  by https link. These stay in a hidden `datasheets/.research/` folder until the
+  part goes on the BOM.
+- Token usage per reply (fresh, cache write, cache read, output), also logged
+  to `.pcb_assistant/usage.jsonl`.
+
+### Fixed
+
+- Equations in chat replies render as math (KaTeX) instead of raw LaTeX.
+
 ## [0.1.0] - 2026-10-19
 
 First public release.
