@@ -413,7 +413,11 @@ class ProposalStore:
                 min_order=o.min_order if (o.min_order or 0) > row.qty else None,
             )
             self._set_status(pid, "approved")
-            return row
+        if o.mpn:
+            from pcb_assistant.datasheets.store import promote_research
+
+            promote_research(self.project_dir, o.mpn)
+        return row
 
     def reject(self, pid: str) -> BomProposal:
         with self._lock:

@@ -204,6 +204,68 @@ def test_tools_record_ledger_and_refuse_passives(tmp_path, design):
     assert "isn't a part with a datasheet" in t.find("C1")
 
 
+def test_candidate_off_the_board_goes_to_research_then_promotes(tmp_path, monkeypatch, design):
+    pdf = make_pdf(["TPS7A2033 300 mA LDO", "Pin functions EN VIN"])
+    _board_lib(tmp_path, monkeypatch, {"https://www.ti.com/lit/ds/symlink/tps7a2033.pdf": Resp(pdf)})
+    t = DatasheetTools(tmp_path, design)
+    assert "not on the board" in t.find("TPS7A2033")
+    stored = tmp_path / "datasheets" / ".research" / "TPS7A2033.pdf"
+    assert stored.read_bytes() == pdf
+    assert "p.2" in t.search("tps7a2033", "pin functions")  # any case
+    assert stored.exists()  # reading it doesn't move it
+    # the tab lists board parts only
+    from pcb_assistant.datasheets.identity import parts_needing_datasheets
+    lib = DatasheetLibrary.for_project(tmp_path)
+    assert "TPS7A2033" not in {e.key for e in lib.list(parts_needing_datasheets(design))}
+    # added to the BOM: the datasheet moves up into the main folder
+    from pcb_assistant.datasheets.store import promote_research
+    promote_research(tmp_path, "tps7a2033")
+    assert not stored.exists() and (tmp_path / "datasheets" / "TPS7A2033.pdf").read_bytes() == pdf
+    assert lib.get("TPS7A2033").origin == "board"
+
+
+def test_board_refs_without_datasheets_are_refused_not_searched(tmp_path, monkeypatch, design):
+    _board_lib(tmp_path, monkeypatch, {})
+    monkeypatch.setattr(fetch.requests, "get", lambda *a, **k: pytest.fail("looked up a passive"))
+    ref = next(c.ref for c in design.components if c.ref.startswith("R") and len(c.ref) >= 2)
+    assert "isn't a part with a datasheet" in DatasheetTools(tmp_path, design).find(ref + "")
+
+
+def test_fetch_document_by_url(tmp_path, monkeypatch, design):
+    from pcb_assistant.datasheets import tools
+
+    note = make_pdf(["Designing with LDOs", "Thermal considerations"])
+    _board_lib(tmp_path, monkeypatch, {"https://ti.com/slva118.pdf": Resp(note, url="https://ti.com/slva118.pdf")})
+    monkeypatch.setattr(tools, "public_https", lambda url: None)
+    t = DatasheetTools(tmp_path, design)
+    assert "2 pages" in t.fetch_document("https://ti.com/slva118.pdf", "LDO app note")
+    assert (tmp_path / "datasheets" / ".research" / "LDO_app_note.pdf").exists()
+    assert "page 2 of 2" in t.read("LDO app note", [2])
+    assert "part on this board" in t.fetch_document("https://ti.com/x.pdf", "U3")
+
+
+@pytest.mark.parametrize("url", [
+    "http://example.com/a.pdf", "https://127.0.0.1/a.pdf", "https://localhost/a.pdf",
+    "https://192.168.1.10/a.pdf", "https://[::1]/a.pdf", "file:///etc/passwd",
+])
+def test_public_https_refuses_local_and_plain_http(url):
+    from pcb_assistant.datasheets.tools import public_https
+
+    with pytest.raises(ValueError):
+        public_https(url)
+
+
+def test_fetch_document_rechecks_where_it_redirected(tmp_path, monkeypatch, design):
+    from pcb_assistant.datasheets import tools
+
+    pdf = make_pdf(["internal"])
+    _board_lib(tmp_path, monkeypatch, {"https://ok.example/a.pdf": Resp(pdf, url="https://10.0.0.5/a.pdf")})
+    monkeypatch.setattr(tools, "public_https",
+                        lambda url: (_ for _ in ()).throw(ValueError("not public")) if "10.0.0.5" in url else None)
+    assert "not public" in DatasheetTools(tmp_path, design).fetch_document("https://ok.example/a.pdf", "doc")
+    assert not (tmp_path / "datasheets" / ".research" / "doc.pdf").exists()
+
+
 # --- DigiKey ---
 
 class FakeSession:
