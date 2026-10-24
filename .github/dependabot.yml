@@ -11,6 +11,23 @@ updates:
     groups:
       npm-minor:
         update-types: [minor, patch]
+    # Major upgrades of the build toolchain and React break the build and need a
+    # deliberate migration, not a monthly bump; minor and patch updates still come.
+    ignore:
+      - dependency-name: vite
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: typescript
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react
+        update-types: ["version-update:semver-major"]
+      - dependency-name: react-dom
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@types/react-dom"
+        update-types: ["version-update:semver-major"]
   - package-ecosystem: pip
     directory: /
     schedule:
