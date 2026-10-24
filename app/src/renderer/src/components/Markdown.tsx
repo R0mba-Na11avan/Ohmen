@@ -3,13 +3,13 @@ import { Check, Copy } from 'lucide-react'
 import mermaid from 'mermaid'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkBreaks from 'remark-breaks'
 import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
 import rehypeKatex from 'rehype-katex'
 import 'katex/dist/katex.min.css'
 import { renderSvg } from './DiagramTab'
 import { normalizeMath } from './markdownMath'
-
 // The source being rendered and whether it is still streaming in: lets a block tell
 // "fence still open" from "finished" without the components object changing per token
 // (a new object would remount every block — and re-render every diagram — each chunk).
@@ -158,6 +158,8 @@ const components: Components = {
 }
 
 const remarkPlugins = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]] as never
+// what the engineer types: a line break is a line break, as it was in the composer
+const remarkPluginsTyped = [...(remarkPlugins as unknown[]), remarkBreaks] as never
 // mermaid stays plain text: Pre hands it to the diagram renderer untouched; a
 // formula KaTeX can't parse (or one still streaming in) shows as its source
 const rehypePlugins = [
@@ -165,12 +167,24 @@ const rehypePlugins = [
   [rehypeKatex, { throwOnError: false, strict: false }],
 ] as never
 
-export const Markdown = memo(function Markdown({ text: raw, streaming = false }: { text: string; streaming?: boolean }) {
+export const Markdown = memo(function Markdown({
+  text: raw,
+  streaming = false,
+  typed = false,
+}: {
+  text: string
+  streaming?: boolean
+  typed?: boolean
+}) {
   // blocks find their end by offset into this text, so the context gets it too
   const text = normalizeMath(raw)
   return (
     <Source.Provider value={{ text, streaming }}>
-      <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
+      <ReactMarkdown
+        remarkPlugins={typed ? remarkPluginsTyped : remarkPlugins}
+        rehypePlugins={rehypePlugins}
+        components={components}
+      >
         {text}
       </ReactMarkdown>
     </Source.Provider>

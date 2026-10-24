@@ -47,6 +47,7 @@
   "dependencies": {
     "katex": "^0.16.22",
     "rehype-katex": "^7.0.1",
+    "remark-breaks": "^4.0.0",
     "remark-math": "^6.0.0"
   }
 }
