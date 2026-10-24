@@ -226,6 +226,34 @@ export const rejectBomProposal = (id: string) =>
   postJson<BomProposal>(`/bom/proposals/${encodeURIComponent(id)}/reject`, {})
 export const approveAllBomProposals = () => postJson<BomRow[]>('/bom/proposals/approve-all', {})
 
+// A footprint the agent generated from a datasheet, waiting on the engineer.
+export interface FootprintDim {
+  name: string
+  min: number | null
+  nom: number | null
+  max: number | null
+  source: string
+}
+export interface FootprintProposal {
+  id: string
+  part: string
+  name: string
+  family: string
+  package: string
+  drawing: string
+  dims: FootprintDim[]
+  warnings: string[]
+  stock: string[] // matching footprints already in KiCad's library
+  status: 'pending' | 'accepted' | 'rejected'
+  file: string | null
+}
+export const getFootprint = (id: string) => get<FootprintProposal>(`/footprints/${encodeURIComponent(id)}`)
+export const footprintPreviewUrl = (id: string) => tokenUrl(`/footprints/${encodeURIComponent(id)}/preview.svg`)
+export const acceptFootprint = (id: string) =>
+  postJson<FootprintProposal>(`/footprints/${encodeURIComponent(id)}/accept`, {})
+export const rejectFootprint = (id: string) =>
+  postJson<FootprintProposal>(`/footprints/${encodeURIComponent(id)}/reject`, {})
+
 // --- datasheet library (<project>/datasheets/) ---
 export interface DatasheetAttempt {
   source: string
@@ -396,6 +424,7 @@ export interface ChatHandlers {
   onBom?(rows: BomRow[]): void
   onFindings?(counts: FindingCounts): void
   onDiagram?(mermaid: string, note: string): void
+  onFootprint?(id: string): void
   onNotice?(text: string): void
   onRateLimit?(info: RateLimitInfo): void
   onUsage?(usage: TurnUsage): void
@@ -477,6 +506,9 @@ export async function streamChat(
         break
       case 'diagram':
         h.onDiagram?.(f.mermaid, f.note)
+        break
+      case 'footprint':
+        h.onFootprint?.(f.id)
         break
       case 'notice':
         h.onNotice?.(f.text)

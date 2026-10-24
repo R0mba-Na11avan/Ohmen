@@ -24,7 +24,7 @@ from fastapi import (
     WebSocketDisconnect,
 )
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from pcb_assistant.bom.fill import BomProposal, ProposalStore
 from pcb_assistant.bom.models import BomRow
@@ -497,6 +497,48 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.post("/bom/proposals/approve-all", response_model=list[BomRow])
     def bom_proposals_approve_all() -> list[BomRow]:
         return ProposalStore(_require_project()).approve_all()
+
+    # --- generated footprints: proposals the engineer accepts on a chat card ---
+
+    def _footprint(pid: str):
+        from pcb_assistant.footprints.proposals import FootprintStore
+
+        p = FootprintStore(_require_project()).get(pid)
+        if p is None:
+            raise HTTPException(404, f"no footprint proposal {pid}")
+        return p
+
+    @app.get("/footprints/{pid}")
+    def footprint_get(pid: str) -> dict:
+        p = _footprint(pid)
+        return p.model_dump(exclude={"kicad_mod"})
+
+    @app.get("/footprints/{pid}/preview.svg")
+    def footprint_preview(pid: str) -> Response:
+        from pcb_assistant.footprints.proposals import render_svg
+
+        p = _footprint(pid)
+        try:
+            return Response(render_svg(p.kicad_mod, p.name), media_type="image/svg+xml")
+        except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+            raise HTTPException(503, f"couldn't draw the preview: {e}") from None
+
+    @app.post("/footprints/{pid}/accept")
+    def footprint_accept(pid: str) -> dict:
+        from pcb_assistant.footprints.proposals import FootprintStore
+
+        _footprint(pid)
+        try:
+            return FootprintStore(_require_project()).accept(pid).model_dump(exclude={"kicad_mod"})
+        except ValueError as e:
+            raise HTTPException(400, str(e)) from None
+
+    @app.post("/footprints/{pid}/reject")
+    def footprint_reject(pid: str) -> dict:
+        from pcb_assistant.footprints.proposals import FootprintStore
+
+        _footprint(pid)
+        return FootprintStore(_require_project()).reject(pid).model_dump(exclude={"kicad_mod"})
 
     # --- datasheet library (<project>/datasheets/) ---
 

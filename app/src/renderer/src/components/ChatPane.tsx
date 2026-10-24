@@ -25,6 +25,7 @@ import { useSteadyText } from '../hooks/useSteadyText'
 import { color, radius, type } from '../theme'
 import { relTime } from '../time'
 import { MermaidView } from './DiagramTab'
+import { FootprintCard } from './FootprintCard'
 import { EffortPicker } from './EffortPicker'
 import { CopyButton, Markdown } from './Markdown'
 import { LogoMark } from './marks'
@@ -47,6 +48,7 @@ interface Turn {
   errorInfo?: ChatErrorInfo // e.g. a subscription's usage limit, with when it resets
   review?: FindingCounts | 'ran' // live counts, or 'ran' when reloaded from history
   diagram?: { note: string; mermaid?: string } // mermaid only live; history keeps the note
+  footprints?: string[] // generated footprint proposals awaiting (or past) the engineer's call
   notices?: string[] // e.g. "continuing on your API key"
   stopped?: boolean // the user stopped the reply part-way
   rateLimit?: RateLimitInfo // a subscription's usage window after this turn (live only)
@@ -62,6 +64,15 @@ interface Attachment {
 
 const REVIEW_TOOLS = new Set(['run_check', 'run_review', 'run_erc', 'run_drc'])
 const DIAGRAM_PREFIX = 'Diagram updated: '
+
+// A reloaded turn's footprint cards come from its create_footprint tool results.
+function footprintsFromTools(tools: ToolEvent[]): string[] | undefined {
+  const ids = tools.flatMap((x) =>
+    x.kind === 'result' && x.name === 'create_footprint' ? [x.info.match(/^Footprint proposal \[(\w+)\]/)?.[1]] : [],
+  )
+  const found = ids.filter((id): id is string => !!id)
+  return found.length ? found : undefined
+}
 
 // A reloaded turn's diagram card comes from its update_diagram tool result.
 function diagramFromTools(tools: ToolEvent[]): Turn['diagram'] {
@@ -478,6 +489,7 @@ export function ChatPane({
             ? 'ran'
             : undefined,
           diagram: diagramFromTools(t.tools ?? []),
+          footprints: footprintsFromTools(t.tools ?? []),
         })),
       )
     } catch {
@@ -620,6 +632,7 @@ export function ChatPane({
         patchLast((t) => ({ ...t, diagram: { mermaid, note } }))
         onDiagramChanged()
       },
+      onFootprint: (id) => patchLast((t) => ({ ...t, footprints: [...(t.footprints ?? []), id] })),
       onNotice: (text) => patchLast((t) => ({ ...t, notices: [...(t.notices ?? []), text] })),
       onRateLimit: (info) => patchLast((t) => ({ ...t, rateLimit: info })),
       onUsage: (usage) => patchLast((t) => ({ ...t, usage })),
@@ -869,6 +882,8 @@ export function ChatPane({
                     <div style={{ color: color.copper, fontSize: type.size.xs, marginTop: 6 }}>open in Diagram →</div>
                   </button>
                 )}
+
+                {t.footprints?.map((id) => <FootprintCard key={id} id={id} />)}
 
                 {(t.a || (live(i) && !t.error) || (!t.error && !t.stopped && t.tools.length === 0)) && (
                   <AgentReply text={t.a} live={live(i)} />
