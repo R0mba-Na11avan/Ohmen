@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto'
 import { createServer } from 'node:net'
 import { request } from 'node:http'
 import { mkdirSync, openSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { delimiter, join, resolve } from 'node:path'
 import { startBrowserFetchServer, type BrowserFetchServer } from './browserFetch'
 import { createKicadProject, revealProject } from './kicadProject'
 import {
@@ -80,6 +80,10 @@ function startSidecar(port: number, browser: BrowserFetchServer | null): ChildPr
       ...process.env,
       PYTHONIOENCODING: 'utf-8',
       PCB_SIDECAR_TOKEN: TOKEN,
+      // Dev: this checkout's source wins over whatever pcb_assistant pip installed.
+      ...(app.isPackaged
+        ? {}
+        : { PYTHONPATH: [join(PROJECT_ROOT, 'src'), process.env.PYTHONPATH].filter(Boolean).join(delimiter) }),
       // Datasheet downloads the vendor refuses to scripts go through a hidden window.
       ...(browser ? { PCB_BROWSER_FETCH: browser.url, PCB_BROWSER_FETCH_TOKEN: browser.token } : {}),
     },
