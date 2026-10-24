@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   acceptFootprint,
+  footprintDrawingUrl,
   footprintPreviewUrl,
   getFootprint,
   rejectFootprint,
@@ -15,11 +16,13 @@ import { IconButton } from './DiagramTab'
 
 const fmt = (v: number | null) => (v == null ? '—' : String(v))
 
-// A footprint the agent generated: the drawing, every number with the datasheet
-// page it came from, and Accept / Reject. Nothing is written until Accept.
+// A footprint the agent generated: KiCad's drawing of the file, KiCad's own
+// read-back of its pads, every number with the datasheet page it came from, and
+// Accept / Reject. Nothing is written until Accept.
 export function FootprintCard({ id }: { id: string }) {
   const [p, setP] = useState<FootprintProposal | null>(null)
-  const [svg, setSvg] = useState<string | null>(null)
+  const [kicadUrl, setKicadUrl] = useState<string | null>(null)
+  const [numberedUrl, setNumberedUrl] = useState<string | null>(null)
   const [previewFailed, setPreviewFailed] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -32,7 +35,8 @@ export function FootprintCard({ id }: { id: string }) {
       (x) => live && setP(x),
       () => live && setError('This footprint proposal is gone (another project, or deleted).'),
     )
-    footprintPreviewUrl(id).then((u) => live && setSvg(u))
+    footprintPreviewUrl(id).then((u) => live && setKicadUrl(u))
+    footprintDrawingUrl(id).then((u) => live && setNumberedUrl(u))
     return () => {
       live = false
     }
@@ -53,6 +57,8 @@ export function FootprintCard({ id }: { id: string }) {
   if (!p) {
     return error ? <div style={{ marginTop: 8, fontSize: type.size.xs, color: color.inkMuted }}>{error}</div> : null
   }
+  const check = p.kicad_check?.status ? p.kicad_check : null
+  const mismatch = check?.status === 'mismatch'
   return (
     <div
       style={{
@@ -77,40 +83,64 @@ export function FootprintCard({ id }: { id: string }) {
         </div>
       </div>
 
-      {svg && !previewFailed ? (
-        <button
-          onClick={() => setZoomed(true)}
-          aria-label={`Open ${p.name} drawing to zoom in`}
-          title="Click to zoom in"
-          style={{
-            background: color.benchVoid,
-            border: `1px solid ${color.benchLine}`,
-            borderRadius: radius.sm,
-            padding: 12,
-            height: 220,
-            cursor: 'zoom-in',
-          }}
-        >
-          {/* the SVG is a few mm wide: stretch it to the box, it's vector */}
-          <img
-            src={svg}
-            alt={`${p.name} footprint drawing`}
-            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
-            onError={() => setPreviewFailed(true)}
-          />
-        </button>
+      {kicadUrl && !previewFailed ? (
+        <div style={{ display: 'grid', gap: 4 }}>
+          <button
+            onClick={() => setZoomed(true)}
+            aria-label={`Open ${p.name} drawing to zoom in`}
+            title="Click to zoom in"
+            style={{
+              background: color.benchVoid,
+              border: `1px solid ${color.benchLine}`,
+              borderRadius: radius.sm,
+              padding: 12,
+              height: 220,
+              cursor: 'zoom-in',
+            }}
+          >
+            {/* the SVG is a few mm wide: stretch it to the box, it's vector */}
+            <img
+              src={kicadUrl}
+              alt={`${p.name} as KiCad draws it`}
+              style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+              onError={() => setPreviewFailed(true)}
+            />
+          </button>
+          <div style={{ fontSize: type.size.xs, color: color.inkMuted }}>
+            Drawn by KiCad from the file. Click to zoom, or switch to pad numbers.
+          </div>
+        </div>
       ) : null}
-      {svg && !previewFailed && <Legend />}
       {previewFailed ? (
         <div style={{ fontSize: type.size.xs, color: color.inkMuted }}>
           No preview: kicad-cli couldn't draw it. Check the footprint in KiCad after accepting.
         </div>
       ) : null}
 
+      {check && (
+        <div
+          role="status"
+          style={{
+            fontSize: type.size.xs,
+            color:
+              check.status === 'match'
+                ? color.statusVerified
+                : check.status === 'mismatch'
+                  ? color.statusCritical
+                  : color.inkMuted,
+          }}
+        >
+          {check.status === 'match' ? '✓ ' : check.status === 'mismatch' ? '✗ ' : ''}
+          {check.detail}
+        </div>
+      )}
+
       <DimsTable dims={p.dims} />
       {/* an explicit land pattern has no package dims: its pads are the numbers to check */}
       <PadsTable pads={p.pads ?? []} open={p.dims.length === 0} />
-      {zoomed && svg && <ZoomView url={svg} name={p.name} onClose={closeZoom} />}
+      {zoomed && kicadUrl && (
+        <ZoomView kicadUrl={kicadUrl} numberedUrl={numberedUrl} name={p.name} onClose={closeZoom} />
+      )}
 
       {p.warnings.length > 0 && (
         <ul style={{ margin: 0, paddingLeft: 16, color: color.statusCaution, fontSize: type.size.xs }}>
@@ -130,9 +160,13 @@ export function FootprintCard({ id }: { id: string }) {
           <button
             disabled={busy}
             onClick={() => decide(true)}
-            style={{ borderColor: color.copper, color: color.copperBright }}
+            style={
+              mismatch
+                ? { borderColor: color.statusCritical, color: color.statusCritical }
+                : { borderColor: color.copper, color: color.copperBright }
+            }
           >
-            Accept
+            {mismatch ? 'Accept anyway' : 'Accept'}
           </button>
           <button disabled={busy} onClick={() => decide(false)}>
             Reject
@@ -143,8 +177,8 @@ export function FootprintCard({ id }: { id: string }) {
         </div>
       ) : p.status === 'accepted' ? (
         <div style={{ fontSize: type.size.xs, color: color.statusVerified }}>
-          Added to {p.file} as <span style={{ fontFamily: type.mono }}>ohmen:{p.name}</span>. Assign it on the
-          symbol in KiCad.
+          Added to {p.file} as <span style={{ fontFamily: type.mono }}>ohmen:{p.name}</span>. Open it in KiCad's
+          footprint editor to measure it against the datasheet, then assign it on the symbol.
         </div>
       ) : (
         <div style={{ fontSize: type.size.xs, color: color.inkMuted }}>Rejected. Nothing was written.</div>
@@ -198,7 +232,7 @@ function DimsTable({ dims }: { dims: FootprintDim[] }) {
   )
 }
 
-// Layer colours as footprints/svg.py draws them.
+// Layer colours of the pad-number drawing (footprints/svg.py).
 const LAYERS = [
   { name: 'copper', color: '#D68A4C' },
   { name: 'silkscreen', color: '#E8E1B0' },
@@ -208,7 +242,7 @@ const LAYERS = [
 
 function Legend() {
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: -2, fontSize: type.size.xs, color: color.inkMuted }}>
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, fontSize: type.size.xs, color: color.inkSecondary }}>
       {LAYERS.map((l) => (
         <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
           <span
@@ -280,8 +314,21 @@ const SCALE_STEPS = [0.05, 0.1, 0.2, 0.5, 1, 2, 5, 10, 20]
 
 // The drawing full-window: wheel zooms about the cursor, drag pans, double-click
 // fits, Esc or a click outside closes. The image is resized, not transformed, so
-// it stays sharp at any zoom, and a scale bar gives real millimetres.
-function ZoomView({ url, name, onClose }: { url: string; name: string; onClose: () => void }) {
+// it stays sharp at any zoom, and a scale bar gives real millimetres. KiCad's
+// drawing of the file by default; Ohmen's own, with pad numbers, on request.
+function ZoomView({
+  kicadUrl,
+  numberedUrl,
+  name,
+  onClose,
+}: {
+  kicadUrl: string
+  numberedUrl: string | null
+  name: string
+  onClose: () => void
+}) {
+  const [numbered, setNumbered] = useState(false)
+  const url = numbered && numberedUrl ? numberedUrl : kicadUrl
   const frame = useRef<HTMLDivElement>(null)
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
   const [nat, setNat] = useState({ w: 0, h: 0 })
@@ -372,8 +419,9 @@ function ZoomView({ url, name, onClose }: { url: string; name: string; onClose: 
         }}
       >
         <img
+          key={url}
           src={url}
-          alt={`${name} footprint drawing`}
+          alt={numbered ? `${name} with pad numbers` : `${name} as KiCad draws it`}
           draggable={false}
           onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
           style={{
@@ -387,6 +435,47 @@ function ZoomView({ url, name, onClose }: { url: string; name: string; onClose: 
             userSelect: 'none',
           }}
         />
+        <div
+          onPointerDown={(e) => e.stopPropagation()}
+          onDoubleClick={(e) => e.stopPropagation()}
+          style={{ position: 'absolute', left: 14, top: 14, display: 'grid', gap: 8, justifyItems: 'start' }}
+        >
+          {numberedUrl && (
+            <div
+              role="group"
+              aria-label="Drawing"
+              style={{
+                display: 'flex',
+                padding: 3,
+                gap: 2,
+                background: color.benchRaised,
+                border: `1px solid ${color.benchLineStrong}`,
+                borderRadius: radius.md,
+              }}
+            >
+              {[
+                { on: false, label: 'KiCad' },
+                { on: true, label: 'Pad numbers' },
+              ].map((o) => (
+                <button
+                  key={o.label}
+                  aria-pressed={numbered === o.on}
+                  onClick={() => setNumbered(o.on)}
+                  style={{
+                    border: 0,
+                    padding: '3px 9px',
+                    fontSize: type.size.xs,
+                    background: numbered === o.on ? color.benchLineStrong : 'transparent',
+                    color: numbered === o.on ? color.inkPrimary : color.inkSecondary,
+                  }}
+                >
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          )}
+          {numbered && <Legend />}
+        </div>
         {view.k > 0 && (
           <div
             style={{
@@ -439,7 +528,8 @@ function ZoomView({ url, name, onClose }: { url: string; name: string; onClose: 
         onClick={(e) => e.stopPropagation()}
         style={{ fontFamily: type.mono, fontSize: 12.5, color: color.inkSecondary, textAlign: 'center' }}
       >
-        {name} · scroll to zoom, drag to pan, double-click to fit
+        {name} · {numbered ? "Ohmen's drawing, not the file" : 'drawn by KiCad from the file'} · scroll to
+        zoom, drag to pan, double-click to fit
       </div>
     </div>,
     document.body,

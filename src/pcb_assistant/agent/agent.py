@@ -726,7 +726,8 @@ def build_toolset(
         return (f"Footprint proposal [{p.id}] {p.name}: waiting for the engineer to accept it in the card "
                 f"below; nothing is written until then. On accept it goes to {proposals.LIB_DIR} as "
                 f"'{proposals.LIB_NAME}:{p.name}' for them to assign on the symbol."
-                + (f"\nWarnings shown on the card:{extra}" if extra else ""))
+                + (f"\nWarnings shown on the card:{extra}" if extra else "")
+                + f"\nKiCad read-back ({p.kicad_check.get('status')}): {p.kicad_check.get('detail')}")
 
     @toolset.tool_plain
     def fetch_document(url: str, name: str) -> str:

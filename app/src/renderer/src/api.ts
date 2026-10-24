@@ -251,6 +251,8 @@ export interface FootprintProposal {
   drawing: string
   dims: FootprintDim[]
   pads?: FootprintPad[] // the lands as built (older proposals have none)
+  // KiCad loaded the file and its pads were compared with the table (older proposals: none)
+  kicad_check?: { status: 'match' | 'mismatch' | 'unavailable'; detail: string }
   warnings: string[]
   stock: string[] // matching footprints already in KiCad's library
   status: 'pending' | 'accepted' | 'rejected'
@@ -258,6 +260,7 @@ export interface FootprintProposal {
 }
 export const getFootprint = (id: string) => get<FootprintProposal>(`/footprints/${encodeURIComponent(id)}`)
 export const footprintPreviewUrl = (id: string) => tokenUrl(`/footprints/${encodeURIComponent(id)}/preview.svg`)
+export const footprintDrawingUrl = (id: string) => tokenUrl(`/footprints/${encodeURIComponent(id)}/drawing.svg`)
 export const acceptFootprint = (id: string) =>
   postJson<FootprintProposal>(`/footprints/${encodeURIComponent(id)}/accept`, {})
 export const rejectFootprint = (id: string) =>
