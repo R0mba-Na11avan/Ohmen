@@ -9,6 +9,8 @@ Each session carries two histories:
   later switch back to an API model keeps the whole conversation.
 - `engine_session` (optional): the subscription CLI's own session for this chat,
   resumed while the provider and model stay the same.
+- `condensed` / `condenses` (optional): the running summary of older turns and
+  each time the chat was condensed (agent/condense.py).
 
 Sessions are the *conversations*. The BOM and project memory stay project-global
 (shared across every chat) — a quick-question chat still edits the one BOM.
@@ -125,6 +127,7 @@ class ChatStore:
             "created_at": s["created_at"],
             "updated_at": s["updated_at"],
             "transcript": s.get("transcript", []),
+            "condenses": s.get("condenses", []),
         }
 
     def messages(self, sid: str) -> list[Any]:
@@ -143,6 +146,19 @@ class ChatStore:
             s = self._sessions.get(sid)
             if s is not None:
                 s["engine_session"] = value
+
+    def set_condensed(self, sid: str, event: dict[str, Any], messages: list[Any]) -> None:
+        """The chat was condensed (agent/condense.py): keep the summary for the next
+        condense and the event for the thread, shrink the agent history, and drop
+        the CLI session so the next message starts a fresh one from the summary."""
+        with self._edit():
+            s = self._sessions.get(sid)
+            if s is None:
+                return
+            s["condensed"] = {"summary": event["summary"], "through": event["through"], "at": event["at"]}
+            s.setdefault("condenses", []).append(event)
+            s["messages"] = messages
+            s["engine_session"] = None
 
     def ensure(self, sid: str | None) -> str:
         """Return `sid` if it names a live session, else make a new one."""

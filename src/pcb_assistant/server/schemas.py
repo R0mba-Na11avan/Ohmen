@@ -6,6 +6,8 @@ generates its TypeScript from the same JSON-Schema.
 """
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 from pcb_assistant.findings.models import Finding
@@ -177,6 +179,7 @@ class ChatSessionDetail(BaseModel):
     created_at: float
     updated_at: float
     transcript: list[ChatTurn] = []
+    condenses: list[dict[str, Any]] = []  # when the chat was condensed: {at_turn, summary, before, after, ...}
 
 
 class ModelInfo(BaseModel):
@@ -200,7 +203,7 @@ class ProviderCredentials(BaseModel):
 
     api_key: str | None = None
     base_url: str | None = None  # local provider only
-    overrides: dict[str, dict[str, bool]] = {}  # local: {model_id: {tools, vision}}
+    overrides: dict[str, dict[str, bool | int]] = {}  # local: {model_id: {tools, vision, context}}
 
 
 class KicadCliStatus(BaseModel):

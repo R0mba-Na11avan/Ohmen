@@ -22,8 +22,11 @@ def family(model: str) -> Capability:
     flags = (creds.overrides.get(model) if creds else None) or {}
     tools = bool(flags.get("tools"))
     vision = bool(flags.get("vision"))
+    # the runtime knows the window and doesn't say; 8k unless the user set it
+    context = flags.get("context")
+    context = int(context) if isinstance(context, int) and not isinstance(context, bool) and context >= 2048 else 8_000
     return Capability(
-        provider="local", model=model, context_tokens=8_000,
+        provider="local", model=model, context_tokens=context,
         supports_pdf=False, supports_tools=tools, supports_vision=vision,
         notes=(
             "Local model; tool-calling enabled in Settings — reliability depends "

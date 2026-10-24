@@ -361,7 +361,8 @@ def test_diagram_nothing_to_draw(tmp_path):
 
 def test_ws_chat_framing(monkeypatch):
     """/ws/chat relays agent frames; agent stubbed so no LLM is called."""
-    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high"):
+    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high",
+                          condense=None):
         yield {"type": "token", "text": "hi"}
         yield {"type": "tool_call", "name": "fill_bom_from_schematic", "args": {}}
         yield {"type": "tool_result", "name": "fill_bom_from_schematic", "summary": "3 rows"}
@@ -389,7 +390,8 @@ def test_ws_chat_stop_cancels_a_quiet_turn(monkeypatch):
 
     cancelled = []
 
-    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high"):
+    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high",
+                          condense=None):
         yield {"type": "token", "text": "partial"}
         try:
             await asyncio.Event().wait()  # a model that has gone quiet
@@ -410,7 +412,8 @@ def test_ws_chat_stop_cancels_a_quiet_turn(monkeypatch):
 def test_ws_chat_passes_effort(monkeypatch):
     seen = []
 
-    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high"):
+    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high",
+                          condense=None):
         seen.append(effort)
         yield {"type": "done"}
 
@@ -510,7 +513,8 @@ def test_chat_session_persists_turn(tmp_path):
     client.post("/sync", json={"path": str(tmp_path)})
     project = tmp_path
 
-    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high"):
+    async def fake_stream(state, message, model, chat_id=None, images=None, review_depth="low", effort="high",
+                          condense=None):
         chats = ChatStore.for_project(project)
         sid = chats.ensure(chat_id)
         yield {"type": "session", "chat_id": sid}
