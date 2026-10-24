@@ -3,8 +3,12 @@ import { Check, Copy } from 'lucide-react'
 import mermaid from 'mermaid'
 import ReactMarkdown, { type Components } from 'react-markdown'
 import remarkGfm from 'remark-gfm'
+import remarkMath from 'remark-math'
 import rehypeHighlight from 'rehype-highlight'
+import rehypeKatex from 'rehype-katex'
+import 'katex/dist/katex.min.css'
 import { renderSvg } from './DiagramTab'
+import { normalizeMath } from './markdownMath'
 
 // The source being rendered and whether it is still streaming in: lets a block tell
 // "fence still open" from "finished" without the components object changing per token
@@ -24,6 +28,7 @@ const hastText = (n: HastNode): string => (n.type === 'text' ? (n.value ?? '') :
 
 // Fences opened minus fences closed is odd while the model is mid-block.
 const hasOpenFence = (text: string) => ((text.match(/^ {0,3}(```|~~~)/gm) ?? []).length % 2) === 1
+
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {
   const [done, setDone] = useState(false)
@@ -152,11 +157,17 @@ const components: Components = {
   ),
 }
 
-const remarkPlugins = [remarkGfm]
-// mermaid stays plain text: Pre hands it to the diagram renderer untouched
-const rehypePlugins = [[rehypeHighlight, { plainText: ['mermaid'] }]] as never
+const remarkPlugins = [remarkGfm, [remarkMath, { singleDollarTextMath: false }]] as never
+// mermaid stays plain text: Pre hands it to the diagram renderer untouched; a
+// formula KaTeX can't parse (or one still streaming in) shows as its source
+const rehypePlugins = [
+  [rehypeHighlight, { plainText: ['mermaid'] }],
+  [rehypeKatex, { throwOnError: false, strict: false }],
+] as never
 
-export const Markdown = memo(function Markdown({ text, streaming = false }: { text: string; streaming?: boolean }) {
+export const Markdown = memo(function Markdown({ text: raw, streaming = false }: { text: string; streaming?: boolean }) {
+  // blocks find their end by offset into this text, so the context gets it too
+  const text = normalizeMath(raw)
   return (
     <Source.Provider value={{ text, streaming }}>
       <ReactMarkdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
