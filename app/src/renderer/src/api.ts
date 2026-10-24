@@ -5,6 +5,7 @@ import type { PartsReport } from './types/parts'
 import type { BomRow } from './types/bom'
 import type { BomProposal, Offer } from './types/bomProposal'
 import { getEffort } from './effort'
+import { getCondense, getCondenseAt } from './condense'
 import { getReviewDepth } from './reviewDepth'
 
 export type ProviderId = 'claude' | 'gemini' | 'openai' | 'local'
@@ -79,7 +80,8 @@ export interface SavedProvider {
   overrides?: LocalOverrides
 }
 
-export type LocalOverrides = Record<string, { tools?: boolean; vision?: boolean }>
+// context: the model's window in tokens, which the runtime doesn't report (8k assumed)
+export type LocalOverrides = Record<string, { tools?: boolean; vision?: boolean; context?: number }>
 
 export interface DesignSummary {
   source: string
@@ -398,6 +400,18 @@ export interface ChatSessionDetail {
   created_at: number
   updated_at: number
   transcript: ChatTurn[]
+  condenses?: CondenseEvent[]
+}
+
+// The chat was condensed before turn `at_turn` (agent/condense.py): older turns
+// became `summary`; `before` / `after` are the request sizes in tokens.
+export interface CondenseEvent {
+  at_turn: number
+  reason: 'size' | 'idle' | 'manual'
+  summary: string
+  summarizer: string | null // null: the plain-transcript fallback stood in
+  before: number
+  after: number
 }
 
 export const listChats = () => get<ChatSessionSummary[]>('/chats')
@@ -418,6 +432,8 @@ export async function uploadChatImage(file: File): Promise<ChatImage> {
   return { ...img, url: await tokenUrl(`/chats/images/${img.id}`) }
 }
 export const deleteChat = (id: string) => reqJson<{ ok: boolean }>('DELETE', `/chats/${id}`)
+export const condenseChat = (id: string, model: string) =>
+  postJson<CondenseEvent>(`/chats/${id}/condense`, { model, condense: getCondense(), condense_at: getCondenseAt() })
 
 // --- streaming chat agent (WebSocket) ---
 export interface FindingCounts {
@@ -438,6 +454,8 @@ export interface ChatHandlers {
   onDiagram?(mermaid: string, note: string): void
   onFootprint?(id: string): void
   onNotice?(text: string): void
+  onCondensing?(): void
+  onCondensed?(event: CondenseEvent): void
   onRateLimit?(info: RateLimitInfo): void
   onUsage?(usage: TurnUsage): void
   onDone?(): void
@@ -483,6 +501,8 @@ export async function streamChat(
         chat_id: chatId,
         review_depth: getReviewDepth(),
         effort: getEffort(),
+        condense: getCondense(),
+        condense_at: getCondenseAt(),
         images: images.map(({ id, name }) => ({ id, name })),
       }),
     )
@@ -525,6 +545,14 @@ export async function streamChat(
       case 'notice':
         h.onNotice?.(f.text)
         break
+      case 'condensing':
+        h.onCondensing?.()
+        break
+      case 'condensed': {
+        const { type: _type, ...event } = f
+        h.onCondensed?.(event)
+        break
+      }
       case 'rate_limit':
         h.onRateLimit?.({ utilization: f.utilization ?? null, resets_at: f.resets_at ?? null, window: f.window })
         break

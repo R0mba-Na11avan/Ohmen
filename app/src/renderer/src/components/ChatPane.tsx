@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
-import { ChevronRight, Plus, SendHorizontal, Square, X } from 'lucide-react'
+import { ChevronRight, FoldVertical, Plus, SendHorizontal, Square, X } from 'lucide-react'
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_IMAGE_TYPES,
+  condenseChat,
   deleteChat,
   getChat,
   listChats,
@@ -12,6 +13,7 @@ import {
   type ChatErrorInfo,
   type ChatImage,
   type ChatSessionSummary,
+  type CondenseEvent,
   type FindingCounts,
   type RateLimitInfo,
   type ReviewerRow,
@@ -53,6 +55,8 @@ interface Turn {
   stopped?: boolean // the user stopped the reply part-way
   rateLimit?: RateLimitInfo // a subscription's usage window after this turn (live only)
   usage?: TurnUsage | null // what this turn cost in tokens
+  condensing?: boolean // earlier turns are being summarized before this one runs
+  condensed?: CondenseEvent // they were, just before this turn
 }
 
 // An image picked in the composer, not yet sent: previewed from a blob URL.
@@ -128,6 +132,69 @@ function ThinkingBlock({ text, live }: { text: string; live: boolean }) {
           {text}
         </div>
       )}
+    </div>
+  )
+}
+
+// The chat was condensed here: a line with the sizes, opening to the summary the
+// agent now works from, so you can check what it still remembers.
+function CondenseNotice({ event }: { event: CondenseEvent }) {
+  const [open, setOpen] = useState(false)
+  const why = { size: 'the chat got long', idle: 'you were away over an hour', manual: 'you asked' }[event.reason]
+  return (
+    <div style={{ margin: '4px 0 14px' }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+        title={`Condensed because ${why}`}
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          gap: 4,
+          padding: '2px 0',
+          border: 0,
+          background: 'transparent',
+          color: color.inkMuted,
+          fontSize: type.size.xs,
+          fontFamily: type.mono,
+        }}
+      >
+        <ChevronRight
+          size={13}
+          strokeWidth={1.75}
+          style={{ transform: open ? 'rotate(90deg)' : 'none', transition: 'transform 120ms var(--ease-out)' }}
+        />
+        Condensed earlier turns: {compact(event.before)} → ~{compact(event.after)} tokens
+        {event.summarizer ? '' : ' (plain transcript)'}
+      </button>
+      {open && (
+        <div
+          className="md"
+          style={{
+            marginTop: 4,
+            marginLeft: 6,
+            paddingLeft: 10,
+            borderLeft: `1px solid ${color.benchLine}`,
+            color: color.inkSecondary,
+            maxHeight: 320,
+            overflow: 'auto',
+          }}
+        >
+          <Markdown text={event.summary} />
+          <div style={{ marginTop: 6, fontSize: type.size.xs, color: color.inkMuted }}>
+            {event.summarizer ? `Summary by ${event.summarizer}. ` : ''}The agent works from this and the latest
+            turns; everything above stays here for you.
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CondensingLine() {
+  return (
+    <div className="breathe" style={{ margin: '4px 0 14px', fontSize: type.size.xs, color: color.inkMuted, fontFamily: type.mono }}>
+      Condensing earlier turns…
     </div>
   )
 }
@@ -366,6 +433,8 @@ export function ChatPane({
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [turns, setTurns] = useState<Turn[]>([])
+  // a Condense now with no turn after it yet: shown below the thread
+  const [trailingCondense, setTrailingCondense] = useState<CondenseEvent | 'busy' | string | null>(null)
   const [msg, setMsg] = useState('')
   const [busy, setBusy] = useState(false)
   const [sidebarW, setSidebarW] = useState(readSidebar)
@@ -472,10 +541,11 @@ export function ChatPane({
 
   async function selectSession(id: string) {
     setActiveId(id)
+    setTrailingCondense(null)
     try {
       const d = await getChat(id)
       setTurns(
-        d.transcript.map((t) => ({
+        d.transcript.map((t, i) => ({
           q: t.q,
           a: t.a,
           thinking: t.thinking,
@@ -490,8 +560,11 @@ export function ChatPane({
             : undefined,
           diagram: diagramFromTools(t.tools ?? []),
           footprints: footprintsFromTools(t.tools ?? []),
+          condensed: d.condenses?.findLast((c) => c.at_turn === i),
         })),
       )
+      const last = d.condenses?.at(-1)
+      setTrailingCondense(last && last.at_turn >= d.transcript.length ? last : null)
     } catch {
       setTurns([])
     }
@@ -500,11 +573,23 @@ export function ChatPane({
   function startNew() {
     setActiveId(null)
     setTurns([])
+    setTrailingCondense(null)
     setMsg('')
     attachments.forEach((a) => URL.revokeObjectURL(a.url))
     setAttachments([])
     setAttachError(null)
     setNewChat((n) => n + 1)
+  }
+
+  // Condense now (the chat row's button): summarize all but the latest turns.
+  async function condenseNow(id: string) {
+    if (busy || trailingCondense === 'busy') return
+    setTrailingCondense('busy')
+    try {
+      setTrailingCondense(await condenseChat(id, model))
+    } catch (e) {
+      setTrailingCondense(e instanceof Error ? e.message : String(e))
+    }
   }
 
   async function removeSession(id: string) {
@@ -599,7 +684,10 @@ export function ChatPane({
     stopRef.current = ctl
     // Show the turn at once from the blob previews, then swap in the stored copies.
     const previews = picked.map((p) => ({ id: p.key, name: p.file.name, url: p.url }))
-    setTurns((ts) => [...ts, { q, a: '', tools: [], images: previews }])
+    // a Condense now made before this message belongs above it
+    const condensedNow = trailingCondense && typeof trailingCondense === 'object' ? trailingCondense : undefined
+    setTrailingCondense(null)
+    setTurns((ts) => [...ts, { q, a: '', tools: [], images: previews, condensed: condensedNow }])
     let images: ChatImage[] = []
     if (picked.length) {
       try {
@@ -634,6 +722,8 @@ export function ChatPane({
       },
       onFootprint: (id) => patchLast((t) => ({ ...t, footprints: [...(t.footprints ?? []), id] })),
       onNotice: (text) => patchLast((t) => ({ ...t, notices: [...(t.notices ?? []), text] })),
+      onCondensing: () => patchLast((t) => ({ ...t, condensing: true })),
+      onCondensed: (event) => patchLast((t) => ({ ...t, condensing: false, condensed: event })),
       onRateLimit: (info) => patchLast((t) => ({ ...t, rateLimit: info })),
       onUsage: (usage) => patchLast((t) => ({ ...t, usage })),
       onDone: () => {
@@ -716,6 +806,20 @@ export function ChatPane({
                   </div>
                   <div style={{ fontSize: type.size.xs, color: color.inkMuted }}>{relTime(s.updated_at)}</div>
                 </div>
+                {active && s.turns > 1 && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      condenseNow(s.id)
+                    }}
+                    disabled={busy || trailingCondense === 'busy'}
+                    title="Condense now: summarize older turns to save tokens"
+                    aria-label="Condense this chat now"
+                    style={{ border: 0, background: 'transparent', padding: '0 2px', color: color.inkMuted, alignSelf: 'center' }}
+                  >
+                    <FoldVertical size={13} strokeWidth={1.75} />
+                  </button>
+                )}
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
@@ -756,6 +860,8 @@ export function ChatPane({
             )}
             {turns.map((t, i) => (
               <div key={i} style={{ marginBottom: 18 }}>
+                {/* the chat was condensed just before this turn */}
+                {t.condensed ? <CondenseNotice event={t.condensed} /> : t.condensing ? <CondensingLine /> : null}
                 {/* what you attached — above your message, same side */}
                 {t.images && t.images.length > 0 && (
                   <div
@@ -939,6 +1045,13 @@ export function ChatPane({
                 )}
               </div>
             ))}
+            {trailingCondense === 'busy' ? (
+              <CondensingLine />
+            ) : typeof trailingCondense === 'string' ? (
+              <div style={{ margin: '4px 0 14px', fontSize: type.size.xs, color: color.inkMuted }}>{trailingCondense}</div>
+            ) : trailingCondense ? (
+              <CondenseNotice event={trailingCondense} />
+            ) : null}
           </div>
         </div>
 

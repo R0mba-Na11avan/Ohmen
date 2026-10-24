@@ -20,6 +20,15 @@ All notable changes are listed here. The format follows
   part goes on the BOM.
 - Token usage per reply (fresh, cache write, cache read, output), also logged
   to `.pcb_assistant/usage.jsonl`.
+- Long chats condense: past a size (Settings > General: Off, Normal ~40k,
+  Aggressive ~20k, or Custom), or after an hour away, older turns become a
+  summary written by a small model on the same route, and the latest turns stay
+  word for word. The chat shows where it happened and what the summary says;
+  each chat row has Condense now.
+- Local models take a context window in Settings (8k was always assumed).
+- Footprint cards show KiCad's drawing of the file and KiCad's own read-back
+  of the pads, compared with the pad table; zoom in for pad numbers.
+- Your chat messages render Markdown.
 
 ### Fixed
 
