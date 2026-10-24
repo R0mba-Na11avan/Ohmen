@@ -776,6 +776,7 @@ export function ChatPane({
                 {/* you — copper, right (an image-only turn has no bubble) */}
                 <div style={{ display: t.q ? 'flex' : 'none', justifyContent: 'flex-end' }}>
                   <div
+                    className="md"
                     style={{
                       background: color.copperFaint,
                       color: color.inkPrimary,
@@ -784,11 +785,12 @@ export function ChatPane({
                       borderRadius: 12,
                       borderTopRightRadius: 3,
                       maxWidth: '75%',
-                      whiteSpace: 'pre-wrap',
+                      minWidth: 0,
+                      overflowWrap: 'anywhere',
                       fontSize: type.size.base,
                     }}
                   >
-                    {t.q}
+                    <Markdown text={t.q} typed />
                   </div>
                 </div>
 
