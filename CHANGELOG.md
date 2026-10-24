@@ -4,7 +4,7 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] - 2026-10-24
 
 ### Added
 
@@ -66,4 +66,5 @@ First public release.
 - Stopping a reply mid design-review stops the chat, but reviewers already
   running finish their current call.
 
+[0.2.0]: https://github.com/R0mba-Na11avan/Ohmen/releases/tag/v0.2.0
 [0.1.0]: https://github.com/R0mba-Na11avan/Ohmen/releases/tag/v0.1.0
