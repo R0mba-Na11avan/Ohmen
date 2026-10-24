@@ -13,7 +13,7 @@ export const PROVIDERS = ['claude', 'gemini', 'openai', 'local'] as const
 export type Provider = (typeof PROVIDERS)[number]
 
 // Per-model capability toggles for local models: { model_id: { tools, vision } }
-export type Overrides = Record<string, { tools?: boolean; vision?: boolean }>
+export type Overrides = Record<string, { tools?: boolean; vision?: boolean; context?: number }>
 
 interface StoredKey {
   enc: string // base64 of the safeStorage ciphertext — or the plain key if !encrypted

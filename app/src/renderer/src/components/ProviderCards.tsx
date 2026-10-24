@@ -251,7 +251,8 @@ function ProviderCard({
 }
 
 // Local models can't be profiled, so the user says which ones can call tools
-// (needed by the chat agent) or read images.
+// (needed by the chat agent) or read images, and how big a context they take
+// (long chats condense at half of it; 8k is assumed when blank).
 function LocalModelToggles({
   models,
   overrides,
@@ -263,20 +264,22 @@ function LocalModelToggles({
 }) {
   const [busy, setBusy] = useState(false)
 
-  async function toggle(model: string, flag: 'tools' | 'vision', on: boolean) {
+  async function save(model: string, change: LocalOverrides[string]) {
     setBusy(true)
     try {
-      await window.pcb.setLocalOverrides({ ...overrides, [model]: { ...overrides[model], [flag]: on } })
+      await window.pcb.setLocalOverrides({ ...overrides, [model]: { ...overrides[model], ...change } })
       onChanged()
     } finally {
       setBusy(false)
     }
   }
+  const toggle = (model: string, flag: 'tools' | 'vision', on: boolean) => save(model, { [flag]: on })
 
   return (
     <div style={{ borderTop: `1px solid ${color.benchLine}`, paddingTop: 8, display: 'grid', gap: 4 }}>
       <div style={{ fontSize: type.size.xs, color: color.inkMuted }}>
-        Tick what each model can do. The chat copilot needs tool calling.
+        Tick what each model can do. The chat copilot needs tool calling. Context is the window your runtime
+        runs the model with, in k tokens.
       </div>
       <div style={{ maxHeight: 180, overflowY: 'auto', display: 'grid', gap: 2 }}>
         {models.map((m) => (
@@ -295,6 +298,25 @@ function LocalModelToggles({
                 {flag}
               </label>
             ))}
+            <label style={{ display: 'flex', gap: 4, alignItems: 'center', color: color.inkSecondary }}>
+              <input
+                type="number"
+                min={2}
+                max={2000}
+                step={1}
+                disabled={busy}
+                placeholder="8"
+                defaultValue={overrides[m]?.context ? Math.round(overrides[m].context! / 1000) : ''}
+                onBlur={(e) => {
+                  const k = Number(e.target.value)
+                  const context = k >= 2 ? Math.round(k * 1000) : undefined
+                  if (context !== overrides[m]?.context) save(m, { context })
+                }}
+                aria-label={`${m} context window, thousands of tokens`}
+                style={{ width: 52 }}
+              />
+              k ctx
+            </label>
           </div>
         ))}
       </div>

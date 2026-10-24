@@ -2,6 +2,16 @@ import { Children, useEffect, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { getKicadCli, getServices, testDigikey, type KicadCliStatus, type ServiceStatus } from '../api'
 import type { ModelState } from '../hooks/useModel'
+import {
+  CONDENSE_LEVELS,
+  CUSTOM_MAX,
+  CUSTOM_MIN,
+  CUSTOM_STEP,
+  getCondense,
+  getCondenseAt,
+  setCondense,
+  type CondenseLevel,
+} from '../condense'
 import { REVIEW_DEPTHS, getReviewDepth, setReviewDepth, type ReviewDepth } from '../reviewDepth'
 import { color, radius, type } from '../theme'
 import { ProviderCards, ipcMessage } from './ProviderCards'
@@ -222,6 +232,9 @@ function GeneralSection() {
       <Group title="Design review">
         <ReviewDepthSetting />
       </Group>
+      <Group title="Chat">
+        <CondenseSetting />
+      </Group>
     </div>
   )
 }
@@ -320,6 +333,73 @@ function AutoCheckSetting() {
       </div>
       <div style={{ fontSize: type.size.sm, color: color.inkMuted, lineHeight: type.line.sm }}>
         KiCad ERC, DRC and the built-in pattern checks. No AI, no cost. For a design review, ask in chat.
+      </div>
+    </>
+  )
+}
+
+// When a long chat is condensed: older turns become a summary, the latest stay.
+function CondenseSetting() {
+  const [level, setLevel] = useState<CondenseLevel>(getCondense)
+  const [at, setAt] = useState<number>(getCondenseAt)
+  const current = CONDENSE_LEVELS.find((l) => l.id === level) ?? CONDENSE_LEVELS[1]
+
+  function choose(next: CondenseLevel) {
+    setLevel(next)
+    setCondense(next)
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+        <span style={{ fontWeight: type.weight.semi }}>Condense long chats</span>
+        <span style={{ fontSize: type.size.sm, color: color.inkMuted }}>summarize older turns to save tokens</span>
+      </div>
+      <div role="radiogroup" aria-label="Condense long chats" style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        {CONDENSE_LEVELS.map((l) => (
+          <button
+            key={l.id}
+            type="button"
+            role="radio"
+            aria-checked={l.id === level}
+            onClick={() => choose(l.id)}
+            style={
+              l.id === level ? { borderColor: color.copper, color: color.copperBright } : { color: color.inkSecondary }
+            }
+          >
+            {l.label}
+          </button>
+        ))}
+      </div>
+      {level === 'custom' && (
+        <div style={{ display: 'grid', gap: 4 }}>
+          <div style={{ display: 'flex', fontSize: type.size.sm, color: color.inkSecondary }}>
+            <span>Condense at</span>
+            <span style={{ flex: 1 }} />
+            <span style={{ color: color.copper, fontFamily: type.mono }}>{Math.round(at / 1000)}k tokens</span>
+          </div>
+          <input
+            type="range"
+            min={CUSTOM_MIN}
+            max={CUSTOM_MAX}
+            step={CUSTOM_STEP}
+            value={at}
+            onChange={(e) => {
+              const v = Number(e.target.value)
+              setAt(v)
+              setCondense('custom', v)
+            }}
+            aria-label="Condense at, in tokens"
+            aria-valuetext={`${Math.round(at / 1000)}k tokens`}
+            style={{ width: '100%', accentColor: color.copper }}
+          />
+        </div>
+      )}
+      <div style={{ fontSize: type.size.sm, color: color.inkSecondary, lineHeight: type.line.sm }}>{current.hint}</div>
+      <div style={{ fontSize: type.size.xs, color: color.inkMuted, lineHeight: type.line.xs }}>
+        A small model on the same route writes the summary, and the latest turns stay word for word. A chat also
+        condenses when you come back after an hour, since the cache has expired by then. Never past half a model's
+        context window, so small local models condense sooner. The chat menu has Condense now.
       </div>
     </>
   )
