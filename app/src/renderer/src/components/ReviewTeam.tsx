@@ -32,6 +32,7 @@ export function applyProgress(team: ReviewerRow[], ev: ReviewProgress): Reviewer
       requests: ev.requests,
       tokens_in: ev.tokens_in,
       tokens_cached: ev.tokens_cached,
+      tokens_cache_write: ev.tokens_cache_write,
       tokens_out: ev.tokens_out,
     }
   }
@@ -55,13 +56,14 @@ export function ReviewTeam({ rows, live }: { rows: ReviewerRow[]; live: boolean 
   const total = reviewers.reduce((n, r) => n + (r.findings ?? 0), 0)
   const failed = reviewers.filter((r) => r.status === 'failed').length
   const longest = Math.max(0, ...reviewers.map((r) => r.ms ?? 0))
-  const tokens = reviewers.reduce((n, r) => n + (r.tokens_in ?? 0), 0)
+  // cache reads are cheap, so the headline counts only uncached input
+  const tokens = reviewers.reduce((n, r) => n + (r.tokens_in ?? 0) - (r.tokens_cached ?? 0), 0)
 
   const summary = working
     ? `review team · ${reviewers.filter((r) => r.status === 'done' || r.status === 'failed').length}/${reviewers.length} done`
     : `review team · ${reviewers.length} reviewer${reviewers.length === 1 ? '' : 's'} · ${total} finding${
         total === 1 ? '' : 's'
-      }${failed ? ` · ${failed} failed` : ''} · ${seconds(longest)}${tokens ? ` · ${compact(tokens)} tokens` : ''}`
+      }${failed ? ` · ${failed} failed` : ''} · ${seconds(longest)}${tokens ? ` · ${compact(tokens)} uncached tokens in` : ''}`
 
   return (
     <div style={{ marginTop: 6, fontFamily: type.mono, fontSize: type.size.xs }}>
@@ -220,8 +222,7 @@ function Row({
           ))}
           {row.tokens_in ? (
             <div style={{ color: color.inkMuted, marginTop: 4 }}>
-              {row.requests} model calls · {compact(row.tokens_in)} tokens in ({compact(row.tokens_cached ?? 0)} cached) ·{' '}
-              {compact(row.tokens_out ?? 0)} out
+              {row.requests} model calls · {usageLine(row)}
             </div>
           ) : null}
         </div>
@@ -244,7 +245,15 @@ function seconds(ms: number): string {
   return ms < 10_000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms / 1000)}s`
 }
 
-function compact(n: number): string {
+// Input split by how it's billed: fresh, written to the prompt cache, read from it.
+export function usageLine(u: { tokens_in?: number; tokens_cached?: number; tokens_cache_write?: number; tokens_out?: number }): string {
+  const cached = u.tokens_cached ?? 0
+  const written = u.tokens_cache_write ?? 0
+  const fresh = Math.max(0, (u.tokens_in ?? 0) - cached - written)
+  return `${compact(fresh)} fresh · ${compact(written)} cache write · ${compact(cached)} cache read · ${compact(u.tokens_out ?? 0)} out`
+}
+
+export function compact(n: number): string {
   return n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${Math.round(n / 1e3)}k` : String(n)
 }
 

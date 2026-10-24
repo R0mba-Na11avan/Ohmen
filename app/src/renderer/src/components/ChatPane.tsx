@@ -15,6 +15,7 @@ import {
   type FindingCounts,
   type RateLimitInfo,
   type ReviewerRow,
+  type TurnUsage,
 } from '../api'
 import { getEffort, setEffort, type Effort } from '../effort'
 import { pickGreeting } from '../greeting'
@@ -28,7 +29,7 @@ import { EffortPicker } from './EffortPicker'
 import { CopyButton, Markdown } from './Markdown'
 import { LogoMark } from './marks'
 import { ModelPicker } from './ModelPicker'
-import { ReviewTeam, applyProgress } from './ReviewTeam'
+import { ReviewTeam, applyProgress, compact, usageLine } from './ReviewTeam'
 
 interface ToolEvent {
   kind: 'call' | 'result'
@@ -49,6 +50,7 @@ interface Turn {
   notices?: string[] // e.g. "continuing on your API key"
   stopped?: boolean // the user stopped the reply part-way
   rateLimit?: RateLimitInfo // a subscription's usage window after this turn (live only)
+  usage?: TurnUsage | null // what this turn cost in tokens
 }
 
 // An image picked in the composer, not yet sent: previewed from a blob URL.
@@ -471,6 +473,7 @@ export function ChatPane({
           images: t.images,
           error: t.error,
           stopped: t.stopped,
+          usage: t.usage,
           review: (t.tools ?? []).some((x) => x.kind === 'result' && REVIEW_TOOLS.has(x.name))
             ? 'ran'
             : undefined,
@@ -619,6 +622,7 @@ export function ChatPane({
       },
       onNotice: (text) => patchLast((t) => ({ ...t, notices: [...(t.notices ?? []), text] })),
       onRateLimit: (info) => patchLast((t) => ({ ...t, rateLimit: info })),
+      onUsage: (usage) => patchLast((t) => ({ ...t, usage })),
       onDone: () => {
         setBusy(false)
         loadSessions()
@@ -881,6 +885,20 @@ export function ChatPane({
                   <div style={{ marginTop: 6, fontSize: type.size.xs, color: color.inkMuted }}>
                     Subscription · {Math.round(t.rateLimit.utilization * 100)}% of the usage window used
                     {t.rateLimit.resets_at ? ` · resets ${resetTime(t.rateLimit.resets_at)}` : ''}
+                  </div>
+                )}
+                {t.usage && !t.error && (
+                  <div
+                    style={{ marginTop: 4, fontSize: type.size.xs, color: color.inkMuted }}
+                    title={`Largest single request: ${compact(t.usage.max_context)} tokens of input`}
+                  >
+                    {t.usage.requests} model call{t.usage.requests === 1 ? '' : 's'} ·{' '}
+                    {usageLine({
+                      tokens_in: t.usage.tokens_fresh + t.usage.tokens_cache_write + t.usage.tokens_cached,
+                      tokens_cached: t.usage.tokens_cached,
+                      tokens_cache_write: t.usage.tokens_cache_write,
+                      tokens_out: t.usage.tokens_out,
+                    })}
                   </div>
                 )}
                 {t.error && t.errorInfo?.code === 'usage_limit' ? (

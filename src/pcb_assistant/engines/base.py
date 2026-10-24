@@ -50,15 +50,19 @@ class UsageLimitError(EngineError):
 @dataclass
 class Usage:
     requests: int = 0
-    tokens_in: int = 0
-    tokens_cached: int = 0
+    tokens_in: int = 0  # every input token, cached or not
+    tokens_cached: int = 0  # of tokens_in: read from the prompt cache
     tokens_out: int = 0
+    tokens_cache_write: int = 0  # of tokens_in: written to the prompt cache
+    max_context: int = 0  # the largest single request's input
 
     def add(self, other: "Usage") -> None:
         self.requests += other.requests
         self.tokens_in += other.tokens_in
         self.tokens_cached += other.tokens_cached
         self.tokens_out += other.tokens_out
+        self.tokens_cache_write += other.tokens_cache_write
+        self.max_context = max(self.max_context, other.max_context)
 
 
 @dataclass

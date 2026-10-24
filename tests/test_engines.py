@@ -132,9 +132,39 @@ def test_claude_stream_parser():
         p.feed(line)
     r = p.finish(0)
     assert r.text == "The code is 7Q-33." and r.session_id == "s-1"
-    assert r.usage == Usage(requests=3, tokens_in=152, tokens_cached=50, tokens_out=10)
+    assert r.usage == Usage(requests=3, tokens_in=152, tokens_cached=50, tokens_out=10, tokens_cache_write=100)
     assert [e["type"] for e in events] == ["thinking", "token", "token", "rate_limit"]
     assert events[-1]["utilization"] == 0.08
+
+
+def test_claude_stream_parser_tracks_the_largest_request():
+    from pcb_assistant.engines.claude_code import StreamParser
+
+    def assistant(mid, fresh, write, read, parent=None):
+        return json.dumps({"type": "assistant", "parent_tool_use_id": parent, "message": {
+            "id": mid, "usage": {"input_tokens": fresh, "cache_creation_input_tokens": write,
+                                 "cache_read_input_tokens": read, "output_tokens": 5}}})
+
+    p = StreamParser()
+    lines = _claude_lines(["ok"])
+    # Partial messages repeat a message per content block; a subagent's don't count.
+    extra = [assistant("m1", 10, 9000, 0), assistant("m1", 10, 9000, 0),
+             assistant("m2", 4, 300, 9000), assistant("m3", 1, 1, 99999, parent="tool-1")]
+    for line in lines[:-1] + extra + lines[-1:]:
+        p.feed(line)
+    assert p.finish(0).usage.max_context == 9304
+
+
+def test_usage_log_splits_fresh_input(tmp_path):
+    from pcb_assistant.agent import usage_log
+
+    entry = usage_log.record(tmp_path, "chat", Usage(requests=2, tokens_in=1000, tokens_cached=700,
+                                                      tokens_cache_write=200, tokens_out=50, max_context=600),
+                             route="subscription", effort=None)
+    assert (entry["tokens_fresh"], entry["tokens_cache_write"], entry["tokens_cached"]) == (100, 200, 700)
+    assert "effort" not in entry
+    line = (tmp_path / ".pcb_assistant" / "usage.jsonl").read_text(encoding="utf-8").strip()
+    assert json.loads(line)["route"] == "subscription"
 
 
 def test_claude_usage_limit_is_its_own_error():

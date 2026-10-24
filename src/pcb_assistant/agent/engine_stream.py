@@ -98,6 +98,7 @@ async def run_engine_stream(
     # Set when this generator is closed early (the user stopped the reply): the
     # CLI runs in a worker thread, which cancelling the coroutine can't stop.
     cancel = threading.Event()
+    resumed = resume is not None  # cleared if the resume fails and a fresh session starts
 
     def work(session: str | None):
         prompt = message if session else seed_transcript(transcript) + message
@@ -108,6 +109,7 @@ async def run_engine_stream(
         )
 
     async def pump() -> None:
+        nonlocal resumed
         try:
             try:
                 res = await asyncio.to_thread(work, resume)
@@ -118,6 +120,7 @@ async def run_engine_stream(
                     raise
                 put("event", {"type": "notice", "text": "Couldn't resume the earlier subscription "
                               "session — continuing from a summary of this chat."})
+                resumed = False
                 res = await asyncio.to_thread(work, None)
             await queue.put(("result", res))
         except Exception as e:
@@ -183,9 +186,19 @@ async def run_engine_stream(
         if not answer_parts and answer:
             yield {"type": "token", "text": answer}
             answer_parts.append(answer)
+        from pcb_assistant.agent import usage_log
+
+        usage = usage_log.record(
+            project, "chat", result.usage, route="subscription", model=model_spec,
+            effort=engine_effort(model_spec, effort), resumed=resumed,
+            tool_calls=sum(1 for t in tools if t["kind"] == "call"), system_chars=len(system),
+            utilization=(result.rate_limit or {}).get("utilization"),
+        )
+        yield {"type": "usage", **usage}
         if chats and sid:
             chats.set_engine_session(sid, {"provider": provider, "model": model, "id": result.session_id})
-            record({"route": "subscription"}, append_messages(chats.messages(sid), message, answer, model_spec))
+            record({"route": "subscription", "usage": usage},
+                   append_messages(chats.messages(sid), message, answer, model_spec))
         yield {"type": "done"}
         return
 
