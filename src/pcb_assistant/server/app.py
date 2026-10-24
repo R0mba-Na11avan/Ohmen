@@ -531,10 +531,20 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/footprints/{pid}/drawing.svg")
     def footprint_drawing(pid: str) -> Response:
         """Ohmen's numbered drawing, from the builder rather than the file."""
+        from pydantic import TypeAdapter, ValidationError
+
+        from pcb_assistant.footprints.build import build
+        from pcb_assistant.footprints.spec import FootprintSpec
+        from pcb_assistant.footprints.svg import drawing
+
         p = _footprint(pid)
-        if not p.drawing_svg:
-            raise HTTPException(404, "this proposal has no numbered drawing")
-        return Response(p.drawing_svg, media_type="image/svg+xml")
+        if p.drawing_svg:
+            return Response(p.drawing_svg, media_type="image/svg+xml")
+        try:  # proposed before drawings were kept: draw it from the spec
+            fp, _ = build(TypeAdapter(FootprintSpec).validate_python(p.spec), p.part)
+        except (ValidationError, ValueError) as e:
+            raise HTTPException(404, f"no numbered drawing for this proposal: {e}") from None
+        return Response(drawing(fp), media_type="image/svg+xml")
 
     @app.post("/footprints/{pid}/accept")
     def footprint_accept(pid: str) -> dict:

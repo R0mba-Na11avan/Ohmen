@@ -687,6 +687,9 @@ def test_footprint_proposal_endpoints(tmp_path, monkeypatch):
     r = client.get(f"/footprints/{p.id}/preview.svg")
     assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml") and r.text == "<svg>kicad</svg>"
     assert client.get(f"/footprints/{p.id}/drawing.svg").text == p.drawing_svg
+    proposals.FootprintStore(tmp_path)._set(p.id, drawing_svg="")  # proposed before drawings were kept
+    r = client.get(f"/footprints/{p.id}/drawing.svg")
+    assert r.status_code == 200 and r.text == p.drawing_svg
     # without KiCad's drawing it draws now, and says so when it can't
     proposals.FootprintStore(tmp_path)._set(p.id, kicad_svg="")
     assert client.get(f"/footprints/{p.id}/preview.svg").status_code == 503
