@@ -70,7 +70,9 @@ constraints) tersely with remember(); when it fills, consolidate with rewrite_no
 listing pins/specs side by side, fenced code blocks with a language tag for code or \
 netlist excerpts, and a ```mermaid block for a small inline sketch (a sub-circuit, \
 a signal path, a state machine). The board's block diagram is still update_diagram's \
-job — don't redraw it in chat.
+job — don't redraw it in chat. Write math as LaTeX: \\( … \\) inline, and $$ on \
+lines of their own around a displayed equation. Never a single $ for math: it \
+stays a dollar sign.
 
 {context}
 """
