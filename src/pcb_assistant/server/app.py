@@ -56,7 +56,7 @@ _autocheck_lock = threading.Lock()
 
 
 def create_app(token: str | None = None) -> FastAPI:
-    app = FastAPI(title="Ohmen sidecar", version="0.2.0")
+    app = FastAPI(title="Ohmen sidecar", version="0.1.1")
     # Added first = innermost: CORS wraps it, so a 401 still carries CORS headers.
     app.add_middleware(TokenGuard, token=token)
     app.add_middleware(
