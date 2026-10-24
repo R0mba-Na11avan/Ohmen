@@ -234,6 +234,14 @@ export interface FootprintDim {
   max: number | null
   source: string
 }
+export interface FootprintPad {
+  number: string
+  x: number
+  y: number
+  w: number
+  h: number
+  drill: number | null
+}
 export interface FootprintProposal {
   id: string
   part: string
@@ -242,6 +250,7 @@ export interface FootprintProposal {
   package: string
   drawing: string
   dims: FootprintDim[]
+  pads?: FootprintPad[] // the lands as built (older proposals have none)
   warnings: string[]
   stock: string[] // matching footprints already in KiCad's library
   status: 'pending' | 'accepted' | 'rejected'

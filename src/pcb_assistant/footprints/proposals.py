@@ -34,6 +34,7 @@ class FootprintProposal(BaseModel):
     drawing: str = ""
     spec: dict[str, Any]
     dims: list[dict[str, Any]] = Field(default_factory=list)  # {name, min, nom, max, source} for the card
+    pads: list[dict[str, Any]] = Field(default_factory=list)  # the lands as built: {number, x, y, w, h, drill}
     warnings: list[str] = Field(default_factory=list)
     stock: list[str] = Field(default_factory=list)
     kicad_mod: str
@@ -98,9 +99,11 @@ def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnin
 
     rows = [{"name": k, "min": d.min, "nom": d.nom, "max": d.max, "source": d.source} for k, d in dims(spec).items()]
     data = spec.model_dump()
+    pads = [{"number": p.number, "x": p.x, "y": p.y, "w": p.w, "h": p.h, "drill": p.drill}
+            for p in fp.pads if p.number]
     return FootprintStore(project_dir).add(FootprintProposal(
         id=uuid.uuid4().hex[:10], part=part, name=fp.name, family=spec.family, package=spec.package,
-        drawing=spec.drawing, spec=data, dims=rows, warnings=warnings, stock=stock,
+        drawing=spec.drawing, spec=data, dims=rows, pads=pads, warnings=warnings, stock=stock,
         kicad_mod=kicad_mod, created_at=time.time(),
     ))
 
@@ -127,8 +130,15 @@ def ensure_library(project: Path) -> bool:
     return True
 
 
+# The Reference and Value fields: a long part name is many times wider than a
+# small part and would shrink the drawing to a speck, so the preview leaves them out.
+_FIELD_TEXT = re.compile(r'^\t\(property "(?:Reference|Value)" .*?^\t\)\n', re.M | re.S)
+
+
 def render_svg(kicad_mod: str, name: str) -> str:
-    """The footprint drawn by kicad-cli (copper, silkscreen, fab, courtyard)."""
+    """The footprint drawn by kicad-cli (copper, silkscreen, fab, courtyard),
+    without its Reference and Value text."""
+    kicad_mod = _FIELD_TEXT.sub("", kicad_mod)
     from pcb_assistant.adapters.kicad_netlist import _resolve_kicad_cli
     from pcb_assistant.procenv import external_env
 

@@ -130,6 +130,22 @@ def test_kicad_cli_reads_the_file():
     assert "<svg" in svg
 
 
+def test_preview_leaves_out_the_reference_and_value_text():
+    text = to_sexpr(build(spec_of(SOIC8), "A_VERY_LONG_PART_NUMBER")[0])
+    stripped = proposals._FIELD_TEXT.sub("", text)
+    assert '(property "Reference"' in text and '(property "Value"' in text
+    assert "(property" not in stripped and stripped.count("(pad ") == text.count("(pad ")
+    assert '(fp_text user "${REFERENCE}"' in stripped  # the fab label inside the body stays
+
+
+def test_name_doesnt_repeat_a_package_the_part_number_starts_with():
+    raw = {"family": "custom", "package": "DFE252012F (2520 / 1008)", "source": "p.1", "body_x": 2.5,
+           "body_y": 2.0, "pads": [{"number": "1", "x": -1, "y": 0, "width": 0.8, "height": 2},
+                                   {"number": "2", "x": 1, "y": 0, "width": 0.8, "height": 2}]}
+    assert build(spec_of(raw), "DFE252012F-4R7M=P2")[0].name == "DFE252012F-4R7M_P2"
+    assert build(spec_of(SOIC8), "TPS54202")[0].name == "SOIC-8_TPS54202"
+
+
 def test_stock_matching_by_name(tmp_path):
     for lib, names in {
         "Package_SO": ["SOIC-8_3.9x4.9mm_P1.27mm", "SO-8_3.9x4.9mm_P1.27mm", "SOIC-8_5.3x5.3mm_P1.27mm",
@@ -160,6 +176,7 @@ def _proposal(project, part="U9"):
 def test_accept_writes_the_library_and_registers_it(tmp_path):
     p = _proposal(tmp_path)
     assert not (tmp_path / "ohmen.pretty").exists()  # proposing writes nothing into the project
+    assert [x["number"] for x in p.pads] == [str(i) for i in range(1, 9)] and p.pads[0]["w"] > 0
     done = proposals.FootprintStore(tmp_path).accept(p.id)
     assert done.status == "accepted" and done.file == "ohmen.pretty/SOIC-8_U9.kicad_mod"
     assert (tmp_path / done.file).read_text().startswith('(footprint "SOIC-8_U9"')
