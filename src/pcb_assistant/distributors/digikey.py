@@ -284,3 +284,53 @@ def client_for(project_dir: str | Path | None) -> DigiKeyClient | None:
         return DigiKeyClient(cache_path=cache)
     except NotConfigured:
         return None
+
+
+# --- compact text for the agent (every line is paid for on each later turn) ---
+
+_NOT_FOR_NEW = ("obsolete", "not for new designs", "discontinued", "last time buy")
+
+
+def usable(part: DigiKeyPart, in_stock_only: bool = True) -> bool:
+    """Worth proposing: not end-of-life, and in stock unless that's waived."""
+    if any(s in (part.lifecycle or "").lower() for s in _NOT_FOR_NEW):
+        return False
+    return not in_stock_only or (part.stock or 0) > 0
+
+
+def offer_line(part: DigiKeyPart) -> str:
+    """'DigiKey 296-1234-1-ND · 12,000 in stock · $0.41 · Active'"""
+    bits = [f"DigiKey {part.digikey_pn}" if part.digikey_pn else "DigiKey"]
+    if part.stock is not None:
+        bits.append(f"{part.stock:,} in stock")
+    price = part.price_at(1)
+    if price is not None:
+        bits.append(f"${price:.2f}")
+    if part.lifecycle:
+        bits.append(part.lifecycle)
+    return " · ".join(bits)
+
+
+def search_line(part: DigiKeyPart, params: int = 6) -> str:
+    """One search result: part, maker, what it is, a few specs, the offer."""
+    specs = "; ".join(f"{k}: {v}" for k, v in list(part.parameters.items())[:params])
+    head = f"{part.mpn} ({part.manufacturer})" if part.manufacturer else part.mpn
+    return f"- {head} — {part.description}" + (f" [{specs}]" if specs else "") + f" — {offer_line(part)}"
+
+
+def details_text(part: DigiKeyPart) -> str:
+    """Everything the agent needs about one part, for choosing and citing it."""
+    lines = [f"{part.mpn} — {part.manufacturer}", part.description]
+    if part.category:
+        lines.append(f"Category: {part.category}")
+    lines.append(offer_line(part))
+    if part.price_breaks:
+        lines.append("Price breaks: " + ", ".join(f"{q}+ ${p:.3f}" for q, p in part.price_breaks[:6]))
+    if part.parameters:
+        lines.append("Parameters:")
+        lines += [f"  {k}: {v}" for k, v in part.parameters.items()]
+    if part.datasheet_url:
+        lines.append(f"Datasheet: {part.datasheet_url}")
+    if part.product_url:
+        lines.append(f"Product page: {part.product_url}")
+    return "\n".join(lines)
