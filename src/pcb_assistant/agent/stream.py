@@ -3,11 +3,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Any, AsyncIterator
 
 from pcb_assistant.agent.agent import (
     BOM_MUTATING_TOOLS,
     DIAGRAM_TOOLS,
+    FOOTPRINT_TOOLS,
     REVIEW_TOOLS,
     build_agent,
 )
@@ -157,6 +159,9 @@ def diagram_frame(project) -> dict[str, Any]:
     return {"type": "diagram", "mermaid": d.get("mermaid", ""), "note": d.get("note", "")}
 
 
+FOOTPRINT_PROPOSAL = re.compile(r"Footprint proposal \[(\w+)\]")
+
+
 def follow_up_frames(project, name: str, summary: str) -> list[dict[str, Any]]:
     """What changed after a tool ran: the BOM, the findings receipt, the diagram."""
     out = []
@@ -167,6 +172,8 @@ def follow_up_frames(project, name: str, summary: str) -> list[dict[str, Any]]:
     # Only on success — a failed redraw leaves the last diagram as-is.
     if name in DIAGRAM_TOOLS and project is not None and summary.startswith("Diagram updated"):
         out.append(diagram_frame(project))
+    if name in FOOTPRINT_TOOLS and (m := FOOTPRINT_PROPOSAL.match(summary)):
+        out.append({"type": "footprint", "id": m.group(1)})
     return out
 
 

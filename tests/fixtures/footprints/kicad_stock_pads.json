@@ -1,0 +1,794 @@
+{
+ "_note": "Pad centres/sizes/drills from KiCad 10.0.5's stock library, for comparing generated land patterns.",
+ "footprints": {
+  "Package_SO:SOIC-8_3.9x4.9mm_P1.27mm": {
+   "spec": {
+    "family": "dual_gullwing",
+    "package": "SOIC-8",
+    "positions": 8,
+    "pitch": 1.27,
+    "lead_span": {
+     "min": 5.8,
+     "max": 6.2,
+     "source": "JEDEC"
+    },
+    "lead_length": {
+     "min": 0.4,
+     "max": 1.27,
+     "source": "JEDEC"
+    },
+    "lead_width": {
+     "min": 0.31,
+     "max": 0.51,
+     "source": "JEDEC"
+    },
+    "body_width": {
+     "min": 3.8,
+     "max": 4.0,
+     "source": "JEDEC"
+    },
+    "body_length": {
+     "min": 4.8,
+     "max": 5.0,
+     "source": "JEDEC"
+    }
+   },
+   "pads": [
+    {
+     "number": "1",
+     "x": -2.475,
+     "y": -1.905,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "2",
+     "x": -2.475,
+     "y": -0.635,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "3",
+     "x": -2.475,
+     "y": 0.635,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "4",
+     "x": -2.475,
+     "y": 1.905,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "5",
+     "x": 2.475,
+     "y": 1.905,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "6",
+     "x": 2.475,
+     "y": 0.635,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "7",
+     "x": 2.475,
+     "y": -0.635,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "8",
+     "x": 2.475,
+     "y": -1.905,
+     "w": 1.95,
+     "h": 0.6,
+     "drill": null
+    }
+   ]
+  },
+  "Package_TO_SOT_SMD:SOT-23": {
+   "spec": {
+    "family": "dual_gullwing",
+    "package": "SOT-23",
+    "positions": 6,
+    "skip_positions": [
+     2,
+     4,
+     6
+    ],
+    "pitch": 0.95,
+    "lead_span": {
+     "min": 2.1,
+     "max": 2.64,
+     "source": "JEDEC"
+    },
+    "lead_length": {
+     "min": 0.3,
+     "max": 0.6,
+     "source": "JEDEC"
+    },
+    "lead_width": {
+     "min": 0.3,
+     "max": 0.5,
+     "source": "JEDEC"
+    },
+    "body_width": {
+     "min": 1.2,
+     "max": 1.4,
+     "source": "JEDEC"
+    },
+    "body_length": {
+     "min": 2.8,
+     "max": 3.04,
+     "source": "JEDEC"
+    }
+   },
+   "pads": [
+    {
+     "number": "1",
+     "x": -0.9375,
+     "y": -0.95,
+     "w": 1.475,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "2",
+     "x": -0.9375,
+     "y": 0.95,
+     "w": 1.475,
+     "h": 0.6,
+     "drill": null
+    },
+    {
+     "number": "3",
+     "x": 0.9375,
+     "y": 0.0,
+     "w": 1.475,
+     "h": 0.6,
+     "drill": null
+    }
+   ]
+  },
+  "Package_DFN_QFN:QFN-24-1EP_4x4mm_P0.5mm_EP2.65x2.65mm": {
+   "spec": {
+    "family": "quad_nolead",
+    "package": "QFN-24",
+    "pins": 24,
+    "pitch": 0.5,
+    "body_x": {
+     "min": 3.9,
+     "max": 4.1,
+     "source": "JEDEC"
+    },
+    "body_y": {
+     "min": 3.9,
+     "max": 4.1,
+     "source": "JEDEC"
+    },
+    "terminal_length": {
+     "min": 0.3,
+     "max": 0.5,
+     "source": "JEDEC"
+    },
+    "terminal_width": {
+     "min": 0.18,
+     "max": 0.3,
+     "source": "JEDEC"
+    },
+    "exposed_pad": [
+     {
+      "min": 2.5,
+      "max": 2.8,
+      "source": "JEDEC"
+     },
+     {
+      "min": 2.5,
+      "max": 2.8,
+      "source": "JEDEC"
+     }
+    ]
+   },
+   "pads": [
+    {
+     "number": "1",
+     "x": -1.95,
+     "y": -1.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "2",
+     "x": -1.95,
+     "y": -0.75,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "3",
+     "x": -1.95,
+     "y": -0.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "4",
+     "x": -1.95,
+     "y": 0.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "5",
+     "x": -1.95,
+     "y": 0.75,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "6",
+     "x": -1.95,
+     "y": 1.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "7",
+     "x": -1.25,
+     "y": 1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "8",
+     "x": -0.75,
+     "y": 1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "9",
+     "x": -0.25,
+     "y": 1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "10",
+     "x": 0.25,
+     "y": 1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "11",
+     "x": 0.75,
+     "y": 1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "12",
+     "x": 1.25,
+     "y": 1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "13",
+     "x": 1.95,
+     "y": 1.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "14",
+     "x": 1.95,
+     "y": 0.75,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "15",
+     "x": 1.95,
+     "y": 0.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "16",
+     "x": 1.95,
+     "y": -0.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "17",
+     "x": 1.95,
+     "y": -0.75,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "18",
+     "x": 1.95,
+     "y": -1.25,
+     "w": 0.85,
+     "h": 0.3,
+     "drill": null
+    },
+    {
+     "number": "19",
+     "x": 1.25,
+     "y": -1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "20",
+     "x": 0.75,
+     "y": -1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "21",
+     "x": 0.25,
+     "y": -1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "22",
+     "x": -0.25,
+     "y": -1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "23",
+     "x": -0.75,
+     "y": -1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "24",
+     "x": -1.25,
+     "y": -1.95,
+     "w": 0.3,
+     "h": 0.85,
+     "drill": null
+    },
+    {
+     "number": "25",
+     "x": 0.0,
+     "y": 0.0,
+     "w": 2.65,
+     "h": 2.65,
+     "drill": null
+    }
+   ]
+  },
+  "Package_QFP:TQFP-32_7x7mm_P0.8mm": {
+   "spec": {
+    "family": "quad_gullwing",
+    "package": "TQFP-32",
+    "pins": 32,
+    "pitch": 0.8,
+    "lead_span_x": {
+     "min": 8.8,
+     "max": 9.2,
+     "source": "JEDEC"
+    },
+    "lead_span_y": {
+     "min": 8.8,
+     "max": 9.2,
+     "source": "JEDEC"
+    },
+    "lead_length": {
+     "min": 0.45,
+     "max": 0.75,
+     "source": "JEDEC"
+    },
+    "lead_width": {
+     "min": 0.3,
+     "max": 0.45,
+     "source": "JEDEC"
+    },
+    "body_x": {
+     "min": 6.9,
+     "max": 7.1,
+     "source": "JEDEC"
+    },
+    "body_y": {
+     "min": 6.9,
+     "max": 7.1,
+     "source": "JEDEC"
+    }
+   },
+   "pads": [
+    {
+     "number": "1",
+     "x": -4.1625,
+     "y": -2.8,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "2",
+     "x": -4.1625,
+     "y": -2.0,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "3",
+     "x": -4.1625,
+     "y": -1.2,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "4",
+     "x": -4.1625,
+     "y": -0.4,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "5",
+     "x": -4.1625,
+     "y": 0.4,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "6",
+     "x": -4.1625,
+     "y": 1.2,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "7",
+     "x": -4.1625,
+     "y": 2.0,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "8",
+     "x": -4.1625,
+     "y": 2.8,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "9",
+     "x": -2.8,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "10",
+     "x": -2.0,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "11",
+     "x": -1.2,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "12",
+     "x": -0.4,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "13",
+     "x": 0.4,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "14",
+     "x": 1.2,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "15",
+     "x": 2.0,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "16",
+     "x": 2.8,
+     "y": 4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "17",
+     "x": 4.1625,
+     "y": 2.8,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "18",
+     "x": 4.1625,
+     "y": 2.0,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "19",
+     "x": 4.1625,
+     "y": 1.2,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "20",
+     "x": 4.1625,
+     "y": 0.4,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "21",
+     "x": 4.1625,
+     "y": -0.4,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "22",
+     "x": 4.1625,
+     "y": -1.2,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "23",
+     "x": 4.1625,
+     "y": -2.0,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "24",
+     "x": 4.1625,
+     "y": -2.8,
+     "w": 1.475,
+     "h": 0.55,
+     "drill": null
+    },
+    {
+     "number": "25",
+     "x": 2.8,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "26",
+     "x": 2.0,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "27",
+     "x": 1.2,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "28",
+     "x": 0.4,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "29",
+     "x": -0.4,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "30",
+     "x": -1.2,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "31",
+     "x": -2.0,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    },
+    {
+     "number": "32",
+     "x": -2.8,
+     "y": -4.1625,
+     "w": 0.55,
+     "h": 1.475,
+     "drill": null
+    }
+   ]
+  },
+  "Resistor_SMD:R_0603_1608Metric": {
+   "spec": {
+    "family": "chip",
+    "kind": "resistor",
+    "package": "0603",
+    "body_length": {
+     "min": 1.45,
+     "max": 1.75,
+     "source": "JEDEC"
+    },
+    "body_width": {
+     "min": 0.65,
+     "max": 0.95,
+     "source": "JEDEC"
+    },
+    "terminal_length": {
+     "min": 0.1,
+     "max": 0.5,
+     "source": "JEDEC"
+    }
+   },
+   "pads": [
+    {
+     "number": "1",
+     "x": -0.825,
+     "y": 0.0,
+     "w": 0.8,
+     "h": 0.95,
+     "drill": null
+    },
+    {
+     "number": "2",
+     "x": 0.825,
+     "y": 0.0,
+     "w": 0.8,
+     "h": 0.95,
+     "drill": null
+    }
+   ]
+  },
+  "Connector_PinHeader_2.54mm:PinHeader_1x04_P2.54mm_Vertical": {
+   "spec": {
+    "family": "pin_header",
+    "package": "1x04",
+    "rows": 1,
+    "pins_per_row": 4,
+    "pitch": 2.54,
+    "lead_diameter": {
+     "min": 0.85,
+     "max": 0.905,
+     "source": "JEDEC"
+    }
+   },
+   "pads": [
+    {
+     "number": "1",
+     "x": 0.0,
+     "y": 0.0,
+     "w": 1.7,
+     "h": 1.7,
+     "drill": 1.0
+    },
+    {
+     "number": "2",
+     "x": 0.0,
+     "y": 2.54,
+     "w": 1.7,
+     "h": 1.7,
+     "drill": 1.0
+    },
+    {
+     "number": "3",
+     "x": 0.0,
+     "y": 5.08,
+     "w": 1.7,
+     "h": 1.7,
+     "drill": 1.0
+    },
+    {
+     "number": "4",
+     "x": 0.0,
+     "y": 7.62,
+     "w": 1.7,
+     "h": 1.7,
+     "drill": 1.0
+    }
+   ]
+  }
+ }
+}

@@ -666,3 +666,26 @@ def test_creds_repr_hides_the_key():
     from pcb_assistant.providers.credentials import Creds
 
     assert "sk-test" not in repr(Creds(api_key="sk-test"))
+
+
+def test_footprint_proposal_endpoints(tmp_path, monkeypatch):
+    from pcb_assistant.footprints import proposals
+    from tests.test_footprints import _proposal
+
+    dst = tmp_path / "board.xml"
+    shutil.copy(NETLIST_XML, dst)
+    client.post("/sync", json={"path": str(dst)})
+    p = _proposal(tmp_path)
+    got = client.get(f"/footprints/{p.id}").json()
+    assert got["status"] == "pending" and "kicad_mod" not in got and got["dims"]
+    assert client.get("/footprints/nope").status_code == 404
+
+    monkeypatch.setattr(proposals, "render_svg", lambda mod, name: "<svg/>")
+    r = client.get(f"/footprints/{p.id}/preview.svg")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml")
+    monkeypatch.setattr(proposals, "render_svg", lambda mod, name: (_ for _ in ()).throw(RuntimeError("no cli")))
+    assert client.get(f"/footprints/{p.id}/preview.svg").status_code == 503
+
+    assert client.post(f"/footprints/{p.id}/accept").json()["status"] == "accepted"
+    assert (tmp_path / "ohmen.pretty" / f"{p.name}.kicad_mod").exists()
+    assert client.post(f"/footprints/{p.id}/accept").status_code == 400

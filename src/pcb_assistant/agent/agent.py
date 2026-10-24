@@ -26,6 +26,9 @@ DIAGRAM_TOOLS = {"update_diagram"}
 # Tools that produce a review (the WS layer emits a findings receipt after these).
 REVIEW_TOOLS = {"run_check", "run_review", "run_erc", "run_drc"}
 
+# Tools that propose a footprint (the WS layer emits an approval card after these).
+FOOTPRINT_TOOLS = {"create_footprint"}
+
 _SYSTEM = """You are a PCB design copilot working alongside an engineer in KiCad. \
 You research parts, review the schematic, and maintain the BOM. The human stays \
 the author; you never edit the schematic — you edit the BOM artifact and advise.
@@ -64,6 +67,11 @@ level you didn't get from DigiKey.
 is accounted for (the BOM covers the design), and redraw it after a change that \
 alters the architecture (a part swap, a new block, a rail change) — not for \
 cosmetic edits like a price or a note. It costs an LLM call.
+- When a part needs a footprint KiCad's library lacks, you can offer to generate one \
+from its datasheet's package drawing with create_footprint. Never generate one unasked: \
+check the spec, tell the engineer what you found (including any stock match), and \
+propose only after they say yes. They approve the result on a card before anything is \
+written.
 - Project notes are your private notepad (the user never sees it), capped at \
 ~2000 chars, oldest notes dropped first. Record durable facts (intent, decisions, \
 constraints) tersely with remember(); when it fills, consolidate with rewrite_notes().
@@ -653,6 +661,71 @@ def build_toolset(
         validates it on first use; later calls are instant.
         """
         return sheets.find(part)
+
+    @toolset.tool_plain
+    def create_footprint(part: str, spec: dict, propose: bool = False) -> str:
+        """Check a package spec read off the datasheet's package drawing, and (with
+        propose=True) build an IPC-7351B footprint for the engineer to approve.
+
+        Read the drawing pages with read_datasheet_pages(as_pdf=True). Call with
+        propose=False first: it checks the numbers and finds any matching footprint
+        in KiCad's library. Then ASK the engineer whether they want one generated;
+        only after they say yes, call again with propose=True. Nothing is written
+        until they accept.
+
+        spec: {"family", "package" (datasheet's name), "drawing" (variant + page), ...}.
+        A dim is {"min","max"} or {"nom"} in mm plus "source": "<part> datasheet p.N".
+        Pin 1 top-left, counter-clockwise.
+        - dual_gullwing (SOIC/SOP/TSSOP/SOT-23): positions (both sides), skip_positions
+          (SOT-23 [2,4,6], SOT-23-5 [5]), pitch, dims lead_span (toe-toe), lead_length
+          (foot), lead_width, body_width, body_length, exposed_pad? [across, along]
+        - quad_gullwing (QFP): pins, pitch, dims lead_span_x/_y, lead_length, lead_width,
+          body_x, body_y, exposed_pad?
+        - dual_nolead (DFN/SON): pins, pitch, dims body_width, body_length,
+          terminal_length (L), terminal_width (b), exposed_pad? [E2, D2]
+        - quad_nolead (QFN): pins, pitch, dims body_x, body_y, terminal_length,
+          terminal_width, exposed_pad?
+        - chip: kind (resistor/capacitor/inductor/diode/led/fuse/other), dims
+          body_length, body_width, terminal_length
+        - pin_header (THT): rows, pins_per_row, pitch, row_pitch, dim lead_diameter
+        - custom (from a recommended land pattern): pads [{number,x,y,width,height,
+          shape,drill?}] (mm, +y down, centre origin), body_x, body_y, source
+        """
+        from pydantic import TypeAdapter, ValidationError
+
+        from pcb_assistant.footprints import proposals, stock
+        from pcb_assistant.footprints.build import build
+        from pcb_assistant.footprints.kicad_mod import to_sexpr
+        from pcb_assistant.footprints.spec import FootprintSpec, check
+
+        try:
+            spec = TypeAdapter(FootprintSpec).validate_python(spec)
+        except ValidationError as e:
+            problems = [f"{'.'.join(str(x) for x in err['loc'])}: {err['msg']}" for err in e.errors()[:8]]
+            return "The spec doesn't fit the format:\n- " + "\n- ".join(problems)
+        errors, warnings = check(spec)
+        if errors:
+            return "The spec doesn't describe a real package — re-read the drawing:\n- " + "\n- ".join(errors)
+        try:
+            found = stock.matches(spec)
+        except Exception:  # no KiCad install to look in
+            found = []
+        notes = "".join(f"\n- {w}" for w in warnings)
+        if not propose:
+            have = (f"KiCad's library already has: {', '.join(found)}." if found
+                    else "No matching footprint in KiCad's library.")
+            return (f"Spec checks out. {have} Ask the engineer whether they want a footprint generated "
+                    f"from the datasheet; call again with propose=True only if they say yes."
+                    + (f"\nWorth a second look:{notes}" if notes else ""))
+        if project_dir is None:
+            return "No project is open."
+        fp, built = build(spec, part)
+        p = proposals.propose(project_dir, part, spec, fp, to_sexpr(fp), warnings + built, found)
+        extra = "".join(f"\n- {w}" for w in p.warnings)
+        return (f"Footprint proposal [{p.id}] {p.name}: waiting for the engineer to accept it in the card "
+                f"below; nothing is written until then. On accept it goes to {proposals.LIB_DIR} as "
+                f"'{proposals.LIB_NAME}:{p.name}' for them to assign on the symbol."
+                + (f"\nWarnings shown on the card:{extra}" if extra else ""))
 
     @toolset.tool_plain
     def fetch_document(url: str, name: str) -> str:
