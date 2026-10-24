@@ -689,7 +689,8 @@ def build_toolset(
           body_length, body_width, terminal_length
         - pin_header (THT): rows, pins_per_row, pitch, row_pitch, dim lead_diameter
         - custom (from a recommended land pattern): pads [{number,x,y,width,height,
-          shape,drill?}] (mm, +y down, centre origin), body_x, body_y, source
+          shape,drill?}] (mm, +y down, centre origin), body_x, body_y, source,
+          polarized? (pin-1 mark; default only with more than two pads)
         """
         from pydantic import TypeAdapter, ValidationError
 

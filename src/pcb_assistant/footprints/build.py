@@ -235,9 +235,11 @@ def build(spec, part: str) -> tuple[Footprint, list[str]]:
                 warnings.append(f"pads {a.number} and {b.number} are only {gap:.2f} mm apart")
 
     bx0, by0, bx1, by1 = cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2
-    # fab: the body, pin-1 corner chamfered
-    c = min(1.0, 0.25 * min(bw, bh))
+    polarized = _polarized(spec)
+    # fab: the body, pin-1 corner chamfered when pin 1 matters
+    c = min(1.0, 0.25 * min(bw, bh)) if polarized else 0
     corners = [(bx0 + c, by0), (bx1, by0), (bx1, by1), (bx0, by1), (bx0, by0 + c), (bx0 + c, by0)]
+    corners = [pt for i, pt in enumerate(corners) if i == 0 or pt != corners[i - 1]]
     fp.lines += [Line(*corners[i], *corners[i + 1], "F.Fab", FAB_WIDTH) for i in range(len(corners) - 1)]
 
     # courtyard: pads and body plus the excess, on the 0.01 grid
@@ -253,7 +255,6 @@ def build(spec, part: str) -> tuple[Footprint, list[str]]:
     s = SILK_OFFSET
     for ln in _rect_lines(bx0 - s, by0 - s, bx1 + s, by1 + s, "F.SilkS", SILK_WIDTH):
         fp.lines += _clip(ln, keepouts)
-    polarized = not (isinstance(spec, Chip) and spec.kind in ("resistor", "capacitor", "inductor", "fuse"))
     if polarized and copper:
         fp.polys.append(_pin1_marker(next(p for p in copper if p.number == "1") if any(
             p.number == "1" for p in copper) else copper[0], keepouts))
@@ -262,6 +263,16 @@ def build(spec, part: str) -> tuple[Footprint, list[str]]:
     fp.value_y = round(k1y + 0.9, 4)
     fp.fab_text_size = max(0.25, min(1.0, round(min(bw, bh) * 0.4, 2)))
     return fp, warnings
+
+
+def _polarized(spec) -> bool:
+    """Whether pin 1 gets marked: not on an R, C, L or fuse, nor on a two-pad
+    land pattern unless the spec says so."""
+    if isinstance(spec, Chip):
+        return spec.kind not in ("resistor", "capacitor", "inductor", "fuse")
+    if isinstance(spec, Custom):
+        return spec.polarized if spec.polarized is not None else len([p for p in spec.pads if p.number]) > 2
+    return True
 
 
 def _pin1_marker(p1: Pad, keepouts) -> Poly:

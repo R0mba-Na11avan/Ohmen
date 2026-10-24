@@ -155,6 +155,7 @@ class Custom(_Base):
     body_x: float
     body_y: float
     source: str = Field(description="the recommended land pattern's page")
+    polarized: bool | None = Field(None, description="mark pin 1; default: when there are more than two pads")
 
 
 FootprintSpec = Annotated[

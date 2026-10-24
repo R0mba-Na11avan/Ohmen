@@ -138,6 +138,28 @@ def test_preview_leaves_out_the_reference_and_value_text():
     assert '(fp_text user "${REFERENCE}"' in stripped  # the fab label inside the body stays
 
 
+def test_two_pad_land_patterns_get_no_pin1_mark_unless_polarized():
+    raw = {"family": "custom", "package": "2520", "source": "p.1", "body_x": 2.5, "body_y": 2.0,
+           "pads": [{"number": "1", "x": -1, "y": 0, "width": 0.8, "height": 2},
+                    {"number": "2", "x": 1, "y": 0, "width": 0.8, "height": 2}]}
+    fp = build(spec_of(raw), "L1")[0]
+    assert fp.polys == [] and len([ln for ln in fp.lines if ln.layer == "F.Fab"]) == 4  # plain body, no chamfer
+    assert len(build(spec_of({**raw, "polarized": True}), "D1")[0].polys) == 1
+    assert len(build(spec_of(SOIC8), "U1")[0].polys) == 1
+
+
+def test_card_drawing_has_every_pad_numbered_inside_its_viewbox():
+    from pcb_assistant.footprints.svg import drawing
+
+    fp = build(spec_of(QFN24), "X")[0]
+    svg = drawing(fp)
+    assert svg.startswith("<svg") and svg.endswith("</svg>")
+    numbers = re.findall(r"<text [^>]*>([^<]+)</text>", svg)
+    assert sorted(numbers, key=int) == [str(i) for i in range(1, 26)]
+    x0, y0, w, h = map(float, re.search(r'viewBox="([^"]+)"', svg).group(1).split())
+    assert all(x0 < p.bbox[0] and p.bbox[2] < x0 + w and y0 < p.bbox[1] and p.bbox[3] < y0 + h for p in fp.pads)
+
+
 def test_name_doesnt_repeat_a_package_the_part_number_starts_with():
     raw = {"family": "custom", "package": "DFE252012F (2520 / 1008)", "source": "p.1", "body_x": 2.5,
            "body_y": 2.0, "pads": [{"number": "1", "x": -1, "y": 0, "width": 0.8, "height": 2},

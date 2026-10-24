@@ -99,7 +99,9 @@ export function FootprintCard({ id }: { id: string }) {
             onError={() => setPreviewFailed(true)}
           />
         </button>
-      ) : previewFailed ? (
+      ) : null}
+      {svg && !previewFailed && <Legend />}
+      {previewFailed ? (
         <div style={{ fontSize: type.size.xs, color: color.inkMuted }}>
           No preview: kicad-cli couldn't draw it. Check the footprint in KiCad after accepting.
         </div>
@@ -192,6 +194,35 @@ function DimsTable({ dims }: { dims: FootprintDim[] }) {
           ))}
         </tbody>
       </table>
+    </div>
+  )
+}
+
+// Layer colours as footprints/svg.py draws them.
+const LAYERS = [
+  { name: 'copper', color: '#D68A4C' },
+  { name: 'silkscreen', color: '#E8E1B0' },
+  { name: 'body (fab)', color: '#6B7C74' },
+  { name: 'courtyard', color: '#A374CE', dashed: true },
+]
+
+function Legend() {
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: -2, fontSize: type.size.xs, color: color.inkMuted }}>
+      {LAYERS.map((l) => (
+        <span key={l.name} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+          <span
+            style={{
+              width: 12,
+              height: l.dashed ? 0 : 8,
+              borderRadius: 2,
+              background: l.dashed ? 'transparent' : l.color,
+              borderTop: l.dashed ? `2px dashed ${l.color}` : undefined,
+            }}
+          />
+          {l.name}
+        </span>
+      ))}
     </div>
   )
 }
