@@ -328,7 +328,9 @@ function ZoomView({
   onClose: () => void
 }) {
   const [numbered, setNumbered] = useState(false)
-  const url = numbered && numberedUrl ? numberedUrl : kicadUrl
+  const [numberedFailed, setNumberedFailed] = useState(false)
+  const canNumber = !!numberedUrl && !numberedFailed
+  const url = numbered && canNumber ? numberedUrl : kicadUrl
   const frame = useRef<HTMLDivElement>(null)
   const drag = useRef<{ px: number; py: number; x: number; y: number } | null>(null)
   const [nat, setNat] = useState({ w: 0, h: 0 })
@@ -424,6 +426,12 @@ function ZoomView({
           alt={numbered ? `${name} with pad numbers` : `${name} as KiCad draws it`}
           draggable={false}
           onLoad={(e) => setNat({ w: e.currentTarget.naturalWidth, h: e.currentTarget.naturalHeight })}
+          onError={() => {
+            // no numbered drawing for this proposal: back to KiCad's, and no tab
+            if (url !== numberedUrl) return
+            setNumberedFailed(true)
+            setNumbered(false)
+          }}
           style={{
             position: 'absolute',
             left: view.x,
@@ -440,7 +448,7 @@ function ZoomView({
           onDoubleClick={(e) => e.stopPropagation()}
           style={{ position: 'absolute', left: 14, top: 14, display: 'grid', gap: 8, justifyItems: 'start' }}
         >
-          {numberedUrl && (
+          {canNumber && (
             <div
               role="group"
               aria-label="Drawing"
@@ -474,7 +482,7 @@ function ZoomView({
               ))}
             </div>
           )}
-          {numbered && <Legend />}
+          {numbered && canNumber && <Legend />}
         </div>
         {view.k > 0 && (
           <div
