@@ -491,7 +491,7 @@ function PanZoom({ code, onError }: { code: string; onError: (e: string) => void
   )
 }
 
-function IconButton({
+export function IconButton({
   label,
   onClick,
   active,

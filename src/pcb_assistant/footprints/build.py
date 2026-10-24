@@ -45,8 +45,9 @@ def _safe(s: str) -> str:
 
 
 def default_name(spec, part: str) -> str:
-    pkg = re.split(r"[\s(]", spec.package.strip(), maxsplit=1)[0]
-    return f"{_safe(pkg) or spec.family}_{_safe(part)}"
+    pkg = _safe(re.split(r"[\s(]", spec.package.strip(), maxsplit=1)[0]) or spec.family
+    name = _safe(part)
+    return name if name.startswith(pkg) else f"{pkg}_{name}"  # DFE252012F-4R7M, not DFE252012F_DFE252012F-4R7M
 
 
 def _ys(n: int, pitch: float) -> list[float]:
