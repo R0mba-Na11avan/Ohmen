@@ -56,9 +56,10 @@ for sure is tagged "maybe" with its candidate rows: compare value, footprint and
 MPN, then merge_bom_rows, or keep_bom_row_separate if it's a different part. To clean up the BOM: fill from the \
 schematic, settle the "maybe" rows, merge planned duplicates of each other, and \
 ask before removing planned parts that were never placed (they may still be coming).
-- For real part numbers, prices, stock and lifecycle, use propose_bom_fill (DigiKey). \
-It only proposes; tell the engineer to approve rows in the BOM tab. Never claim a \
-price or stock level you didn't get from it.
+- For real part numbers, prices, stock and lifecycle, use DigiKey: search_digikey / \
+digikey_part while choosing, propose_bom_fill for the BOM's rows (it only proposes; \
+tell the engineer to approve rows in the BOM tab). Never claim a price or stock \
+level you didn't get from DigiKey.
 - Keep the block diagram current with update_diagram: draw it once every part \
 is accounted for (the BOM covers the design), and redraw it after a change that \
 alters the architecture (a part swap, a new block, a rail change) — not for \
@@ -306,6 +307,41 @@ def build_toolset(
         return f"Filled the BOM from the schematic: {n} grouped row(s).{_reconcile_note(bom.last_reconcile)}"
 
     @toolset.tool_plain
+    def search_digikey(keywords: str, limit: int = 8, in_stock_only: bool = True) -> str:
+        """Search DigiKey by keywords (part type + key specs, e.g. 'LDO 3.3V 500mA SOT-23').
+        Returns real orderable parts with key specs, stock, price and lifecycle;
+        obsolete and not-for-new-designs parts are left out."""
+        from pcb_assistant.distributors.digikey import DigiKeyError, client_for, search_line, usable
+
+        client = client_for(project_dir)
+        if client is None:
+            return "DigiKey isn't set up — the engineer can add it in Settings › Parts sources."
+        limit = max(1, min(limit, 20))
+        try:
+            found = client.keyword_search(keywords, limit=min(50, limit * 3))
+        except DigiKeyError as e:
+            return f"DigiKey search failed: {e}"
+        hits = [p for p in found if usable(p, in_stock_only)][:limit]
+        if not hits:
+            return f"No {'in-stock ' if in_stock_only else ''}active parts on DigiKey for '{keywords}'. Try broader words."
+        return f"DigiKey results for '{keywords}':\n" + "\n".join(search_line(p) for p in hits)
+
+    @toolset.tool_plain
+    def digikey_part(mpn: str) -> str:
+        """One part's full DigiKey record: every parameter, price breaks, stock,
+        lifecycle, datasheet and product links."""
+        from pcb_assistant.distributors.digikey import DigiKeyError, client_for, details_text
+
+        client = client_for(project_dir)
+        if client is None:
+            return "DigiKey isn't set up — the engineer can add it in Settings › Parts sources."
+        try:
+            part = client.product_details(mpn)
+        except DigiKeyError as e:
+            return f"DigiKey lookup failed: {e}"
+        return details_text(part) if part else f"DigiKey has no part '{mpn}'. Check the part number, or search_digikey."
+
+    @toolset.tool_plain
     def research_parts(requirements: str) -> str:
         """Research candidate parts for a requirement, grounded in real datasheets.
 
@@ -320,16 +356,18 @@ def build_toolset(
             if fps:
                 hint = f"\nPrefer these footprints already used on the board: {', '.join(fps)}."
         try:
-            report = _research(requirements + hint, model_spec=model_spec)
+            report = _research(requirements + hint, model_spec=model_spec, project_dir=project_dir)
         except Exception as e:
             return f"research failed: {e}"
         lines = []
         for r in report.results:
             c = r.candidate
+            offer = f" — {c.digikey}" if c.digikey else ""
             if r.datasheet_ok:
-                lines.append(f"- {c.mpn} ({c.category}) — {c.why}; datasheet {c.datasheet_url}")
+                lines.append(f"- {c.mpn} ({c.category}) — {c.why}{offer}; datasheet stored, readable "
+                             f"with read_datasheet_pages('{c.mpn}', …)")
             else:
-                lines.append(f"- {c.mpn}: ungrounded ({r.note})")
+                lines.append(f"- {c.mpn}{offer}: ungrounded ({r.note})")
         return "Candidates:\n" + ("\n".join(lines) if lines else "(none)")
 
     @toolset.tool_plain

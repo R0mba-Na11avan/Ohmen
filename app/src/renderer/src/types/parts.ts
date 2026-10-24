@@ -6,6 +6,7 @@ export type Mpn = string;
 export type Category = string;
 export type Why = string;
 export type DatasheetUrl = string | null;
+export type Digikey = string;
 export type DatasheetOk = boolean;
 export type GroundedReview = string;
 export type Note = string;
@@ -29,5 +30,6 @@ export interface Candidate {
   category?: Category;
   why?: Why;
   datasheet_url?: DatasheetUrl;
+  digikey?: Digikey;
   [k: string]: unknown;
 }
