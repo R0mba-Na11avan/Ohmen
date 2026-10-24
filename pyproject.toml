@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ohmen"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI design-review copilot for KiCad: schematic review and parts research, grounded in cited datasheets."
 readme = "README.md"
 license = "MIT"

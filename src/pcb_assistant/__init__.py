@@ -6,4 +6,4 @@ populates that IR; every model sits behind the provider shim. Those two
 boundaries are what keep tools and models swappable — see docs/architecture.md.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
