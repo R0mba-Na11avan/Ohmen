@@ -733,6 +733,15 @@ path.power-flow {
 .md li {
   margin: 2px 0;
 }
+/* KaTeX hides its MathML copy with position: absolute; anchored anywhere above
+   the chat scroller, those copies pile up outside it and stretch the pane. */
+.md .katex {
+  position: relative;
+}
+.md .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
 /* Diagram caption: explainers recede, part names and section heads lead. */
 .md.caption {
   color: var(--ink-secondary);
