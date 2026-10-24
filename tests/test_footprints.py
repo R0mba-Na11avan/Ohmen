@@ -130,6 +130,48 @@ def test_kicad_cli_reads_the_file():
     assert "<svg" in svg
 
 
+def _pads_of(fp):
+    return [{"number": p.number, "x": p.x, "y": p.y, "w": p.w, "h": p.h, "drill": p.drill} for p in fp.pads if p.number]
+
+
+@pytest.mark.parametrize("name", sorted(GOLDEN["footprints"]))
+def test_kicad_reads_back_the_pads_we_wrote(name):
+    fp = build(spec_of(GOLDEN["footprints"][name]["spec"]), "X")[0]
+    got = proposals.kicad_check(to_sexpr(fp), fp.name, _pads_of(fp))
+    if got["status"] == "unavailable":
+        pytest.skip("no kicad-cli here")
+    assert got["status"] == "match", got
+
+
+def test_kicad_check_catches_a_pad_that_differs():
+    fp = build(spec_of(SOIC8), "X")[0]
+    pads = _pads_of(fp)
+    pads[2] = {**pads[2], "w": pads[2]["w"] + 0.05}
+    got = proposals.kicad_check(to_sexpr(fp), fp.name, pads + [{**pads[0], "number": "9"}])
+    if got["status"] == "unavailable":
+        pytest.skip("no kicad-cli here")
+    assert got["status"] == "mismatch"
+    assert "read 8 pads, the table has 9" in got["detail"] and "pad 3: w" in got["detail"] and "pad 9 is missing" in got["detail"]
+
+
+def test_reading_pads_from_kicads_copy():
+    saved = ('(footprint "X" (version 20250114) (generator "pcbnew")\n'
+             '\t(pad "1" smd roundrect (at -1 0.5 90) (size 2 0.8) (layers "F.Cu"))\n'
+             '\t(pad "" smd rect (at 0 0) (size 1 1) (layers "F.Paste"))\n'
+             '\t(pad "2" thru_hole circle (at 1 0) (size 1.7 1.7) (drill 1.0) (layers "*.Cu"))\n)')
+    assert proposals._pads_in(saved) == [
+        {"number": "1", "x": -1.0, "y": 0.5, "w": 0.8, "h": 2.0, "drill": None},  # quarter turn: w/h swap
+        {"number": "2", "x": 1.0, "y": 0.0, "w": 1.7, "h": 1.7, "drill": 1.0}]
+
+
+def test_kicad_check_without_kicad(monkeypatch):
+    from pcb_assistant.adapters import kicad_netlist
+
+    monkeypatch.setattr(kicad_netlist, "_resolve_kicad_cli", lambda _: (_ for _ in ()).throw(FileNotFoundError()))
+    fp = build(spec_of(SOIC8), "X")[0]
+    assert proposals.kicad_check(to_sexpr(fp), fp.name, _pads_of(fp))["status"] == "unavailable"
+
+
 def test_preview_leaves_out_the_reference_and_value_text():
     text = to_sexpr(build(spec_of(SOIC8), "A_VERY_LONG_PART_NUMBER")[0])
     stripped = proposals._FIELD_TEXT.sub("", text)

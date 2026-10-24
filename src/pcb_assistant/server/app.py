@@ -500,6 +500,8 @@ def create_app(token: str | None = None) -> FastAPI:
 
     # --- generated footprints: proposals the engineer accepts on a chat card ---
 
+    _FP_BULK = {"kicad_mod", "kicad_svg", "drawing_svg"}  # served on their own, not in the card JSON
+
     def _footprint(pid: str):
         from pcb_assistant.footprints.proposals import FootprintStore
 
@@ -511,19 +513,28 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/footprints/{pid}")
     def footprint_get(pid: str) -> dict:
         p = _footprint(pid)
-        return p.model_dump(exclude={"kicad_mod", "preview_svg"})
+        return p.model_dump(exclude=_FP_BULK)
 
     @app.get("/footprints/{pid}/preview.svg")
     def footprint_preview(pid: str) -> Response:
+        """KiCad's drawing of the file (made when proposed; older proposals draw now)."""
         from pcb_assistant.footprints.proposals import render_svg
 
         p = _footprint(pid)
-        if p.preview_svg:
-            return Response(p.preview_svg, media_type="image/svg+xml")
-        try:  # proposals from before Ohmen drew its own
+        if p.kicad_svg:
+            return Response(p.kicad_svg, media_type="image/svg+xml")
+        try:
             return Response(render_svg(p.kicad_mod, p.name), media_type="image/svg+xml")
         except (OSError, RuntimeError, subprocess.SubprocessError) as e:
             raise HTTPException(503, f"couldn't draw the preview: {e}") from None
+
+    @app.get("/footprints/{pid}/drawing.svg")
+    def footprint_drawing(pid: str) -> Response:
+        """Ohmen's numbered drawing, from the builder rather than the file."""
+        p = _footprint(pid)
+        if not p.drawing_svg:
+            raise HTTPException(404, "this proposal has no numbered drawing")
+        return Response(p.drawing_svg, media_type="image/svg+xml")
 
     @app.post("/footprints/{pid}/accept")
     def footprint_accept(pid: str) -> dict:
@@ -531,7 +542,7 @@ def create_app(token: str | None = None) -> FastAPI:
 
         _footprint(pid)
         try:
-            return FootprintStore(_require_project()).accept(pid).model_dump(exclude={"kicad_mod", "preview_svg"})
+            return FootprintStore(_require_project()).accept(pid).model_dump(exclude=_FP_BULK)
         except ValueError as e:
             raise HTTPException(400, str(e)) from None
 
@@ -540,7 +551,7 @@ def create_app(token: str | None = None) -> FastAPI:
         from pcb_assistant.footprints.proposals import FootprintStore
 
         _footprint(pid)
-        return FootprintStore(_require_project()).reject(pid).model_dump(exclude={"kicad_mod", "preview_svg"})
+        return FootprintStore(_require_project()).reject(pid).model_dump(exclude=_FP_BULK)
 
     # --- datasheet library (<project>/datasheets/) ---
 

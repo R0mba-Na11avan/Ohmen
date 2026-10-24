@@ -38,7 +38,9 @@ class FootprintProposal(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     stock: list[str] = Field(default_factory=list)
     kicad_mod: str
-    preview_svg: str = ""  # the card's drawing (footprints/svg.py)
+    kicad_svg: str = ""  # KiCad's drawing of the file, for the card
+    drawing_svg: str = ""  # Ohmen's numbered drawing (footprints/svg.py), in the zoom view
+    kicad_check: dict[str, Any] = Field(default_factory=dict)  # {status, detail}: KiCad read it back
     status: Literal["pending", "accepted", "rejected"] = "pending"
     created_at: float = 0.0
     file: str | None = None  # relative to the project, once accepted
@@ -103,10 +105,15 @@ def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnin
     data = spec.model_dump()
     pads = [{"number": p.number, "x": p.x, "y": p.y, "w": p.w, "h": p.h, "drill": p.drill}
             for p in fp.pads if p.number]
+    try:
+        kicad_svg = render_svg(kicad_mod, fp.name)
+    except (OSError, RuntimeError, subprocess.SubprocessError):
+        kicad_svg = ""  # the card says so; the check below says why
     return FootprintStore(project_dir).add(FootprintProposal(
         id=uuid.uuid4().hex[:10], part=part, name=fp.name, family=spec.family, package=spec.package,
         drawing=spec.drawing, spec=data, dims=rows, pads=pads, warnings=warnings, stock=stock,
-        kicad_mod=kicad_mod, preview_svg=drawing(fp), created_at=time.time(),
+        kicad_mod=kicad_mod, kicad_svg=kicad_svg, drawing_svg=drawing(fp),
+        kicad_check=kicad_check(kicad_mod, fp.name, pads), created_at=time.time(),
     ))
 
 
@@ -135,28 +142,118 @@ def ensure_library(project: Path) -> bool:
 # The Reference and Value fields: a long part name is many times wider than a
 # small part and would shrink the drawing to a speck, so the preview leaves them out.
 _FIELD_TEXT = re.compile(r'^\t\(property "(?:Reference|Value)" .*?^\t\)\n', re.M | re.S)
+_PREVIEW_LAYERS = "F.Cu,F.Paste,F.SilkS,F.Fab,F.CrtYd"
+TOL = 0.001  # mm: KiCad keeps nanometres, the file has four decimals
 
 
-def render_svg(kicad_mod: str, name: str) -> str:
-    """The footprint drawn by kicad-cli (copper, silkscreen, fab, courtyard),
-    without its Reference and Value text."""
-    kicad_mod = _FIELD_TEXT.sub("", kicad_mod)
+def _kicad(kicad_mod: str, name: str, *steps: str) -> dict[str, str]:
+    """Run kicad-cli on the footprint in a throwaway library: "svg" draws it
+    (without its Reference and Value text), "readback" has KiCad load the file
+    and save it again in its own words. Raises FileNotFoundError without KiCad."""
     from pcb_assistant.adapters.kicad_netlist import _resolve_kicad_cli
     from pcb_assistant.procenv import external_env
 
     cli = _resolve_kicad_cli(None)
+    out: dict[str, str] = {}
     with tempfile.TemporaryDirectory(prefix="ohmen-fp-") as tmp:
-        lib = Path(tmp) / "preview.pretty"
-        lib.mkdir()
-        (lib / f"{name}.kicad_mod").write_text(kicad_mod, encoding="utf-8")
-        out = Path(tmp) / "svg"
-        out.mkdir()  # kicad-cli won't create it
-        r = subprocess.run(
-            [cli, "fp", "export", "svg", "--output", str(out), "--footprint", name,
-             "--layers", "F.Cu,F.Paste,F.SilkS,F.Fab,F.CrtYd", "--sketch-pads-on-fab-layers", str(lib)],
-            capture_output=True, text=True, timeout=60, check=False, env=external_env(),
-        )
-        svgs = sorted(out.glob("*.svg")) if out.is_dir() else []
-        if r.returncode != 0 or not svgs:
-            raise RuntimeError((r.stderr or r.stdout or "kicad-cli drew nothing").strip()[-300:])
-        return svgs[0].read_text(encoding="utf-8")
+        base = Path(tmp)
+
+        def run(args: list[str]) -> None:
+            r = subprocess.run([cli, "fp", *args], capture_output=True, text=True, timeout=60, check=False,
+                               env=external_env())
+            if r.returncode != 0:
+                raise RuntimeError((r.stderr or r.stdout or f"kicad-cli exited {r.returncode}").strip()[-300:])
+
+        for step in steps:
+            lib = base / f"{step}.pretty"
+            lib.mkdir()
+            text = _FIELD_TEXT.sub("", kicad_mod) if step == "svg" else kicad_mod
+            (lib / f"{name}.kicad_mod").write_text(text, encoding="utf-8")
+            if step == "svg":
+                dest = base / "svg"
+                dest.mkdir()  # kicad-cli won't create it
+                run(["export", "svg", "--output", str(dest), "--footprint", name, "--layers", _PREVIEW_LAYERS,
+                     str(lib)])
+                found = sorted(dest.glob("*.svg"))
+            else:
+                dest = base / "readback-out.pretty"  # must not exist yet
+                run(["upgrade", "--force", "--output", str(dest), str(lib)])
+                found = sorted(dest.glob("*.kicad_mod"))
+            if not found:
+                raise RuntimeError(f"kicad-cli wrote nothing for {step}")
+            out[step] = found[0].read_text(encoding="utf-8")
+    return out
+
+
+def render_svg(kicad_mod: str, name: str) -> str:
+    """The footprint as KiCad draws it from the file: copper, paste, silkscreen,
+    fab and courtyard."""
+    return _kicad(kicad_mod, name, "svg")["svg"]
+
+
+def _sexpr(text: str) -> list:
+    """A KiCad S-expression as nested lists of strings."""
+    stack: list[list] = [[]]
+    for m in re.finditer(r'\(|\)|"((?:\\.|[^"\\])*)"|[^\s()"]+', text):
+        tok = m.group(0)
+        if tok == "(":
+            stack.append([])
+        elif tok == ")":
+            done = stack.pop()
+            stack[-1].append(done)
+        else:
+            stack[-1].append(m.group(1) if tok.startswith('"') else tok)
+    return stack[0]
+
+
+def _pads_in(saved: str) -> list[dict[str, Any]]:
+    """The numbered pads in a footprint file KiCad wrote."""
+    (fp,) = _sexpr(saved)
+    out = []
+    for node in fp:
+        if not (isinstance(node, list) and node and node[0] == "pad" and node[1]):
+            continue
+        fields = {n[0]: n[1:] for n in node[2:] if isinstance(n, list) and n}
+        at, size, drill = fields.get("at", ["0", "0"]), fields.get("size", ["0", "0"]), fields.get("drill")
+        if len(at) > 2 and float(at[2]) % 180:
+            size = list(reversed(size))  # rotated a quarter turn: KiCad's width is our height
+        out.append({"number": node[1], "x": float(at[0]), "y": float(at[1]), "w": float(size[0]),
+                    "h": float(size[1]), "drill": float(drill[-1]) if drill else None})
+    return out
+
+
+def kicad_check(kicad_mod: str, name: str, pads: list[dict[str, Any]]) -> dict[str, Any]:
+    """Have KiCad read the file and compare the pads it found with the ones
+    Ohmen meant to write. Independent of Ohmen's own drawing and builder."""
+    try:
+        saved = _kicad(kicad_mod, name, "readback")["readback"]
+    except FileNotFoundError:
+        return {"status": "unavailable", "detail": "KiCad isn't installed here, so it couldn't read the file back."}
+    except (OSError, RuntimeError, subprocess.SubprocessError) as e:
+        return {"status": "mismatch", "detail": f"KiCad couldn't load the file: {e}"}
+    try:
+        found = _pads_in(saved)
+    except (ValueError, IndexError) as e:
+        return {"status": "mismatch", "detail": f"KiCad's copy of the file didn't parse: {e}"}
+    # pads can share a number (mounting tabs): pair them up in position order
+    theirs: dict[str, list] = {}
+    for p in sorted(found, key=lambda p: (p["x"], p["y"])):
+        theirs.setdefault(p["number"], []).append(p)
+    problems = []
+    if len(found) != len(pads):
+        problems.append(f"KiCad read {len(found)} pads, the table has {len(pads)}")
+    for mine in sorted(pads, key=lambda p: (p["x"], p["y"])):
+        if not theirs.get(mine["number"]):
+            problems.append(f"pad {mine['number']} is missing")
+            continue
+        t = theirs[mine["number"]].pop(0)
+        off = [k for k in ("x", "y", "w", "h") if abs(t[k] - mine[k]) > TOL]
+        if (t["drill"] is None) != (mine["drill"] is None) or (
+                t["drill"] is not None and abs(t["drill"] - mine["drill"]) > TOL):
+            off.append("drill")
+        if off:
+            problems.append(f"pad {mine['number']}: {', '.join(off)} differ")
+    if problems:
+        return {"status": "mismatch", "detail": "; ".join(problems[:6])}
+    n = len(found)
+    return {"status": "match", "detail": f"KiCad read {n} pad{'s' if n != 1 else ''}, all match the table."}

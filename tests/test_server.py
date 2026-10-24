@@ -677,15 +677,18 @@ def test_footprint_proposal_endpoints(tmp_path, monkeypatch):
     client.post("/sync", json={"path": str(dst)})
     p = _proposal(tmp_path)
     got = client.get(f"/footprints/{p.id}").json()
-    assert got["status"] == "pending" and "kicad_mod" not in got and "preview_svg" not in got and got["dims"]
+    assert got["status"] == "pending" and got["dims"] and got["kicad_check"]["status"]
+    assert not {"kicad_mod", "kicad_svg", "drawing_svg"} & set(got)
     assert client.get("/footprints/nope").status_code == 404
 
-    # Ohmen's own drawing, no kicad-cli needed
+    # both drawings are kept with the proposal: no kicad-cli needed to show them again
     monkeypatch.setattr(proposals, "render_svg", lambda mod, name: (_ for _ in ()).throw(RuntimeError("no cli")))
+    proposals.FootprintStore(tmp_path)._set(p.id, kicad_svg="<svg>kicad</svg>")
     r = client.get(f"/footprints/{p.id}/preview.svg")
-    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml") and r.text == p.preview_svg
-    # an older proposal without one falls back to kicad-cli, and says so when that fails
-    proposals.FootprintStore(tmp_path)._set(p.id, preview_svg="")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("image/svg+xml") and r.text == "<svg>kicad</svg>"
+    assert client.get(f"/footprints/{p.id}/drawing.svg").text == p.drawing_svg
+    # without KiCad's drawing it draws now, and says so when it can't
+    proposals.FootprintStore(tmp_path)._set(p.id, kicad_svg="")
     assert client.get(f"/footprints/{p.id}/preview.svg").status_code == 503
     monkeypatch.setattr(proposals, "render_svg", lambda mod, name: "<svg/>")
     assert client.get(f"/footprints/{p.id}/preview.svg").text == "<svg/>"
