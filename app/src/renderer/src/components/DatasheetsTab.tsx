@@ -3,6 +3,7 @@ import {
   datasheetUrl,
   fetchDatasheets,
   getDatasheets,
+  getResearchDatasheets,
   uploadDatasheet,
   type DatasheetEntry,
 } from '../api'
@@ -13,19 +14,24 @@ const SOURCE_LABEL: Record<string, string> = {
   manufacturer: 'manufacturer site',
   digikey: 'DigiKey',
   upload: 'added by you',
+  url: 'fetched by URL',
 }
 
 // The project's datasheet library: one row per part that has a datasheet. The
 // files live in <project>/datasheets/; the agent reads them page by page and
-// cites them. A part nothing could find takes a dropped-in PDF.
+// cites them. A part nothing could find takes a dropped-in PDF. Documents the
+// agent pulled in while researching (candidates, app notes) sit in a collapsed
+// Research section underneath; a part moves up once it's placed or on the BOM.
 export function DatasheetsTab({ refreshKey }: { refreshKey: number }) {
   const [rows, setRows] = useState<DatasheetEntry[]>([])
+  const [research, setResearch] = useState<DatasheetEntry[]>([])
   const [busy, setBusy] = useState<string | null>(null) // key being fetched, or '*' for all
   const [error, setError] = useState('')
   const [dragKey, setDragKey] = useState<string | null>(null)
 
   useEffect(() => {
     getDatasheets().then(setRows).catch(() => setRows([]))
+    getResearchDatasheets().then(setResearch).catch(() => setResearch([]))
   }, [refreshKey])
 
   async function fetchAll(key?: string, refresh = false) {
@@ -67,8 +73,11 @@ export function DatasheetsTab({ refreshKey }: { refreshKey: number }) {
 
   if (rows.length === 0) {
     return (
-      <div style={{ color: color.inkSecondary, fontSize: type.size.base, lineHeight: type.line.base }}>
-        No parts with datasheets yet. Sync a project with ICs, connectors or other parts that carry a part number.
+      <div style={{ display: 'grid', gap: space[4] }}>
+        <div style={{ color: color.inkSecondary, fontSize: type.size.base, lineHeight: type.line.base }}>
+          No parts with datasheets yet. Sync a project with ICs, connectors or other parts that carry a part number.
+        </div>
+        <ResearchSection docs={research} onOpen={open} />
       </div>
     )
   }
@@ -197,7 +206,65 @@ export function DatasheetsTab({ refreshKey }: { refreshKey: number }) {
           )
         })}
       </div>
+
+      <ResearchSection docs={research} onOpen={open} />
     </div>
+  )
+}
+
+// Collapsed by default: what the agent read while choosing parts isn't the board's.
+function ResearchSection({ docs, onOpen }: { docs: DatasheetEntry[]; onOpen: (key: string) => void }) {
+  if (docs.length === 0) return null
+  return (
+    <details>
+      <summary style={{ cursor: 'pointer', fontSize: type.size.sm, color: color.inkSecondary }}>
+        <span style={{ fontWeight: type.weight.med, color: color.inkPrimary }}>Research</span> · {docs.length}{' '}
+        document{docs.length === 1 ? '' : 's'} pulled in while researching, in{' '}
+        <span style={{ fontFamily: type.mono }}>datasheets/.research/</span>
+      </summary>
+      <div
+        style={{
+          marginTop: space[2],
+          border: `1px solid ${color.benchLine}`,
+          borderRadius: radius.md,
+          overflow: 'hidden',
+        }}
+      >
+        {docs.map((d, i) => (
+          <div
+            key={d.key}
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'minmax(0, 1fr) auto',
+              gap: space[3],
+              alignItems: 'center',
+              padding: `${space[2]}px ${space[4]}px`,
+              borderTop: i ? `1px solid ${color.benchLine}` : undefined,
+              background: color.benchRaised,
+            }}
+          >
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontFamily: type.mono, fontWeight: type.weight.med, overflowWrap: 'anywhere' }}>{d.key}</div>
+              <div
+                title={d.url ?? undefined}
+                style={{
+                  fontSize: type.size.sm,
+                  color: color.inkSecondary,
+                  marginTop: 2,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {d.pages} pages · {SOURCE_LABEL[d.source ?? ''] ?? d.source}
+                {d.url ? ` · ${d.url}` : ''}
+              </div>
+            </div>
+            <button onClick={() => onOpen(d.key)}>Open</button>
+          </div>
+        ))}
+      </div>
+    </details>
   )
 }
 

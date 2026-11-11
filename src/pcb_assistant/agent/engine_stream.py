@@ -8,6 +8,13 @@ Continuity: the chat remembers the CLI's session id and resumes it while the
 provider and model stay the same. Otherwise (model or route switched, or the
 session is gone) a fresh session starts, seeded with a compact transcript of
 the chat so far.
+
+Prompts (Claude Code): a permission check or an AskUserQuestion reaches `ask`
+on a bridge thread, goes out as a `prompt` frame, and blocks until the user
+answers (POST /chat/prompts/{id}); a `prompt_done` frame follows either way.
+`/add-dir <folder>` is handled here, not by the model: the folder is kept on the
+chat and passed to every later run as `--add-dir`. Other `/commands` go to the
+CLI as typed, so the user's own skills run.
 """
 from __future__ import annotations
 
@@ -22,6 +29,53 @@ from pcb_assistant.agent.stream import follow_up_frames, merge_progress, record_
 
 SEED_TURNS = 12
 SEED_CHARS_PER_ANSWER = 1500
+ADD_DIR = "/add-dir"
+
+# chat id -> tools the user allowed for the rest of that chat (until the app restarts)
+_always_allowed: dict[str, set[str]] = {}
+
+
+def prompt_label(payload: dict[str, Any]) -> str:
+    """The trace line a prompt leaves in the chat history."""
+    from pcb_assistant.engines.claude_code import tool_label
+
+    if payload.get("kind") == "question":
+        qs = [str(q.get("question", "")) for q in payload.get("questions") or [] if isinstance(q, dict)]
+        return "asked: " + " / ".join(qs)[:120]
+    return "permission: " + tool_label(str(payload.get("tool", "")), payload.get("input") or {})
+
+
+def prompt_outcome(payload: dict[str, Any], ans: dict[str, Any] | None) -> str:
+    if ans is None:
+        return "no answer" if payload.get("kind") == "question" else "no answer — denied"
+    if payload.get("kind") == "question":
+        answers = ans.get("answers") if isinstance(ans.get("answers"), dict) else {}
+        return ("answered: " + "; ".join(str(v) for v in answers.values())) if answers else "skipped"
+    if ans.get("allow"):
+        return "allowed for this chat" if ans.get("always") else "allowed"
+    return "denied" + (f": {ans['message']}" if ans.get("message") else "")
+
+
+def add_dir_reply(chats: ChatStore | None, sid: str | None, project, arg: str) -> str:
+    """Answer `/add-dir [folder]` (relative folders resolve against the project)."""
+    if not (chats and sid):
+        return "Open a project first: added folders belong to a chat."
+    arg = arg.strip().strip('"').strip("'")
+    if not arg:
+        dirs = chats.added_dirs(sid)
+        listed = "\n".join(f"- `{d}`" for d in dirs) if dirs else "none yet"
+        return f"Folders Claude Code can read in this chat besides the project:\n{listed}\n\nAdd one with `/add-dir <folder>`."
+    from pathlib import Path
+
+    path = Path(arg).expanduser()
+    if not path.is_absolute() and project is not None:
+        path = Path(project) / path
+    path = path.resolve()
+    if not path.is_dir():
+        return f"`{path}` isn't a folder, so nothing was added."
+    chats.add_dir(sid, str(path))
+    return (f"Added `{path}`. Claude Code can now read files there for the rest of this chat "
+            "(writes still ask first).")
 
 
 def seed_transcript(transcript: list[dict[str, Any]]) -> str:
@@ -69,12 +123,23 @@ async def run_engine_stream(
     effort: str = "high",
 ) -> AsyncIterator[dict[str, Any]]:
     from pcb_assistant.agent.agent import build_toolset, engine_effort, system_prompt
-    from pcb_assistant.engines import dispatch
+    from pcb_assistant.engines import config, dispatch, prompts
     from pcb_assistant.engines.base import EngineError, UsageLimitError
     from pcb_assistant.providers.registry import api_fallback
 
     project = state.project
     provider, _, model = model_spec.partition(":")
+
+    command, _, rest = message.strip().partition(" ")
+    if command == ADD_DIR:  # Claude Code's own /add-dir is interactive-only; do it here
+        if sid:
+            yield {"type": "session", "chat_id": sid}
+        reply = add_dir_reply(chats, sid, project, rest)
+        yield {"type": "token", "text": reply}
+        if chats and sid:
+            chats.record(sid, {"q": message, "a": reply, "route": "subscription"}, chats.messages(sid))
+        yield {"type": "done"}
+        return
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[tuple[str, Any]] = asyncio.Queue()
 
@@ -103,14 +168,37 @@ async def run_engine_stream(
 
     condensed = (chats.get(sid) or {}).get("condensed") if chats and sid else None
 
+    def ask(payload: dict[str, Any]) -> dict[str, Any] | None:
+        """On a bridge thread: show the prompt, wait for the user's answer."""
+        permission = payload.get("kind") == "permission"
+        tool = str(payload.get("tool", ""))
+        if permission and sid and tool in _always_allowed.get(sid, set()):
+            return {"allow": True}
+        p = prompts.open_prompt(payload)
+        put("event", {"type": "prompt", "id": p.id, **payload})
+        ans = prompts.wait(p, cancel)
+        if permission and sid and ans and ans.get("allow") and ans.get("always"):
+            _always_allowed.setdefault(sid, set()).add(tool)
+        put("event", {"type": "prompt_done", "id": p.id, "label": prompt_label(payload),
+                      "outcome": prompt_outcome(payload, ans)})
+        return ans
+
+    # The chat's own run options; only Claude Code takes them.
+    interactive = (
+        {"ask": ask, "project_dir": project, "add_dirs": chats.added_dirs(sid) if chats and sid else []}
+        if config.engine_of(model_spec) == "claude" else {}
+    )
+    slash = message.lstrip().startswith("/")  # a skill or command: the CLI only sees it at the very start
+
     def work(session: str | None):
         # a fresh session starts from the chat's summary when it has one
-        opening = condense_seed(condensed, transcript) if condensed else seed_transcript(transcript)
-        prompt = message if session else opening + message
+        opening = "" if session else (condense_seed(condensed, transcript) if condensed else seed_transcript(transcript))
+        prompt, sys_text = (message, system + "\n\n" + opening) if slash and opening else (opening + message, system)
         return dispatch.run(
-            model_spec, system, prompt, toolset=toolset,
+            model_spec, sys_text, prompt, toolset=toolset,
             on_event=lambda e: put("event", e), on_tool=lambda e: put("event", e),
             session=session, images=paths, effort=engine_effort(model_spec, effort), cancel=cancel,
+            **interactive,
         )
 
     async def pump() -> None:
@@ -170,7 +258,11 @@ async def run_engine_stream(
                 yield ev
                 for frame in follow_up_frames(project, ev["name"], ev["summary"]):
                     yield frame
-            else:  # rate_limit, notice
+            elif ev["type"] == "prompt_done":  # the history keeps what was asked and answered
+                tools.append({"kind": "call", "name": ev["label"], "info": ""})
+                tools.append({"kind": "result", "name": ev["label"], "info": ev["outcome"]})
+                yield ev
+            else:  # prompt, commands, rate_limit, notice
                 yield ev
     except (asyncio.CancelledError, GeneratorExit):  # the user stopped the reply
         record_stopped(chats, sid, message, model_spec, attached, answer_parts, thinking_parts, tools, team)

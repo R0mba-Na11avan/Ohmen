@@ -37,7 +37,11 @@ per-model capability metadata (tool use, native PDF input, context size). The
 reasoning code asks for a capability, never for a vendor. The tool-using agent
 uses [pydantic-ai](https://ai.pydantic.dev/) on top of the same credentials.
 `engines/` adds an alternative route through the Codex or Claude Code CLIs,
-which bridge back to the app's tools over a local MCP server.
+which bridge back to the app's tools over a local MCP server. In the chat,
+Claude Code's permission checks and AskUserQuestion also come back over that
+server (`--permission-prompt-tool`): the bridge thread blocks while the chat
+shows a card, and the answer arrives on `POST /chat/prompts/{id}`
+(`engines/prompts.py`). Reviews and parts research stay fully isolated.
 
 ## How a review works
 

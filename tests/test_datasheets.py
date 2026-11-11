@@ -217,11 +217,14 @@ def test_candidate_off_the_board_goes_to_research_then_promotes(tmp_path, monkey
     from pcb_assistant.datasheets.identity import parts_needing_datasheets
     lib = DatasheetLibrary.for_project(tmp_path)
     assert "TPS7A2033" not in {e.key for e in lib.list(parts_needing_datasheets(design))}
+    # ...and its collapsed Research section lists the candidate
+    assert [e.key for e in lib.research()] == ["TPS7A2033"]
     # added to the BOM: the datasheet moves up into the main folder
     from pcb_assistant.datasheets.store import promote_research
     promote_research(tmp_path, "tps7a2033")
     assert not stored.exists() and (tmp_path / "datasheets" / "TPS7A2033.pdf").read_bytes() == pdf
     assert lib.get("TPS7A2033").origin == "board"
+    assert lib.research() == []
 
 
 def test_board_refs_without_datasheets_are_refused_not_searched(tmp_path, monkeypatch, design):

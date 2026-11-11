@@ -16,6 +16,7 @@ import { REVIEW_DEPTHS, getReviewDepth, setReviewDepth, type ReviewDepth } from 
 import { color, radius, type } from '../theme'
 import { ProviderCards, ipcMessage } from './ProviderCards'
 import { EngineCard, FallbackSetting, RouteSetting, useEngines } from './Subscriptions'
+import { UpdateSettings } from './UpdateNotice'
 
 export type SettingsTab = 'general' | 'providers' | 'parts' | 'advanced' | 'about'
 
@@ -646,6 +647,7 @@ function AboutSection() {
         </div>
       )}
       {info && <div style={{ color: color.inkMuted }}>Electron {info.electron}</div>}
+      <UpdateSettings />
     </div>
   )
 }

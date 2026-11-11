@@ -30,6 +30,23 @@ SERVER_NAME = "pcb"  # tools show up in the CLI as mcp__pcb__<tool> / pcb.<tool>
 PROTOCOL_VERSION = "2025-06-18"
 SUMMARY_CHARS = 500
 
+# Claude Code's --permission-prompt-tool: the CLI calls it (the model never sees
+# it) to ask whether a tool may run, and for AskUserQuestion's answers.
+PERMISSION_TOOL = "permission_prompt"
+PERMISSION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "tool_name": {"type": "string"},
+        "input": {"type": "object"},
+        "tool_use_id": {"type": "string"},
+    },
+    "required": ["tool_name", "input"],
+}
+
+# Decides one permission ask: {"tool_name", "input", ...} -> the CLI's reply,
+# {"behavior": "allow", "updatedInput": {...}} or {"behavior": "deny", "message": str}.
+Permission = Callable[[dict[str, Any]], dict[str, Any]]
+
 # on_event receives {"type": "tool_call", "name", "args"} before a tool runs and
 # {"type": "tool_result", "name", "summary"} after — the same shape stream.py emits.
 ToolEvent = Callable[[dict[str, Any]], None]
@@ -42,6 +59,7 @@ class _Run:
     on_event: ToolEvent | None
     attach_dir: Path | None  # where PDF tool attachments are saved (None: text only)
     max_calls: int | None = None
+    permission: Permission | None = None
     calls: int = 0
     files: list[Path] = field(default_factory=list)
 
@@ -80,12 +98,15 @@ def serve(
     on_event: ToolEvent | None = None,
     attach_dir: str | Path | None = None,
     max_calls: int | None = None,
+    permission: Permission | None = None,
 ) -> Iterator[Bridge]:
     """Expose `toolset` for the duration of the block. Past `max_calls` tool calls,
-    every call answers "stop" — the CLIs have no request cap of their own."""
+    every call answers "stop" — the CLIs have no request cap of their own.
+    `permission` also serves PERMISSION_TOOL, which blocks while the user decides."""
     port = _ensure_server()
     run_id = secrets.token_urlsafe(12)
-    run = _Run(toolset, secrets.token_urlsafe(32), on_event, Path(attach_dir) if attach_dir else None, max_calls)
+    run = _Run(toolset, secrets.token_urlsafe(32), on_event, Path(attach_dir) if attach_dir else None,
+               max_calls, permission)
     with _lock:
         _runs[run_id] = run
     try:
@@ -175,15 +196,36 @@ def handle(run: _Run, msg: Any) -> dict | None:
     elif method == "ping":
         result = {}
     elif method == "tools/list":
-        result = {"tools": [
+        tools = [
             {"name": t.name, "description": t.description or "", "inputSchema": t.function_schema.json_schema}
             for t in run.toolset.tools.values()
-        ]}
+        ]
+        if run.permission is not None:
+            tools.append({"name": PERMISSION_TOOL, "description": "Ask the user to allow a tool call.",
+                          "inputSchema": PERMISSION_SCHEMA})
+        result = {"tools": tools}
     elif method == "tools/call":
-        result = call_tool(run, str(params.get("name", "")), params.get("arguments") or {})
+        name, args = str(params.get("name", "")), params.get("arguments") or {}
+        if name == PERMISSION_TOOL and run.permission is not None:
+            result = ask_permission(run, args)
+        else:
+            result = call_tool(run, name, args)
     else:
         return _error(msg_id, -32601, f"method not found: {method}")
     return {"jsonrpc": "2.0", "id": msg_id, "result": result}
+
+
+def ask_permission(run: _Run, args: dict) -> dict:
+    """The CLI wants a decision; never counts as a tool call. Anything going
+    wrong denies — a broken prompt must not turn into an allow."""
+    try:
+        decision = run.permission(args) if run.permission else None
+    except Exception as e:
+        log.exception("permission prompt failed")
+        decision = {"behavior": "deny", "message": f"Couldn't ask the user ({type(e).__name__})."}
+    if not isinstance(decision, dict) or decision.get("behavior") not in ("allow", "deny"):
+        decision = {"behavior": "deny", "message": "The user didn't allow this."}
+    return {"content": [{"type": "text", "text": json.dumps(decision)}]}
 
 
 def call_tool(run: _Run, name: str, args: dict) -> dict:

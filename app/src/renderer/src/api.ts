@@ -46,7 +46,9 @@ export interface EngineStatus {
 // Stored by the main process (settings.json); nothing secret.
 export interface EngineSettings {
   codex?: { enabled?: boolean; path?: string }
-  claude?: { enabled?: boolean; path?: string; tosAck?: boolean }
+  // userSetup: chat loads your ~/.claude skills/plugins (default on); fullTools:
+  // every built-in tool, each asked for in the chat (default off)
+  claude?: { enabled?: boolean; path?: string; tosAck?: boolean; userSetup?: boolean; fullTools?: boolean }
   preferredRoute?: { claude?: Route; openai?: Route }
   fallbackToApi?: boolean
 }
@@ -284,8 +286,11 @@ export interface DatasheetEntry {
   pages: number
   tried: DatasheetAttempt[]
   fetched_at: number
+  origin?: 'board' | 'research' // research: pulled in by the agent, kept in datasheets/.research/
 }
 export const getDatasheets = () => get<DatasheetEntry[]>('/datasheets')
+// Documents the agent pulled in while researching (candidates, app notes), newest first.
+export const getResearchDatasheets = () => get<DatasheetEntry[]>('/datasheets/research')
 export const fetchDatasheets = (key?: string, refresh = false) =>
   postJson<DatasheetEntry[]>('/datasheets/fetch', { key: key ?? null, refresh })
 export function uploadDatasheet(key: string, file: File): Promise<DatasheetEntry> {
@@ -458,9 +463,37 @@ export interface ChatHandlers {
   onCondensed?(event: CondenseEvent): void
   onRateLimit?(info: RateLimitInfo): void
   onUsage?(usage: TurnUsage): void
+  onPrompt?(prompt: ChatPrompt): void
+  onPromptDone?(id: string, outcome: string): void
+  onCommands?(commands: string[], skills: string[]): void
   onDone?(): void
   onError?(detail: string, info?: ChatErrorInfo): void
 }
+
+// Claude Code asking mid-turn: may it use a tool, or which option you pick
+// (AskUserQuestion). The turn waits until you answer (answerPrompt).
+export interface PromptOption {
+  label: string
+  description?: string
+}
+export interface PromptQuestion {
+  question: string
+  header?: string
+  options: PromptOption[]
+  multiSelect?: boolean
+}
+export type ChatPrompt =
+  | { id: string; kind: 'permission'; tool: string; input: Record<string, unknown> }
+  | { id: string; kind: 'question'; tool: string; questions: PromptQuestion[] }
+
+export interface PromptAnswer {
+  allow?: boolean
+  always?: boolean // allow this tool for the rest of the chat
+  answers?: Record<string, string> // question -> chosen label(s), comma-separated, or typed text
+  message?: string
+}
+export const answerPrompt = (id: string, answer: PromptAnswer) =>
+  postJson<{ ok: boolean; detail: string }>(`/chat/prompts/${encodeURIComponent(id)}`, answer)
 
 // A subscription's usage window, as its CLI reports it.
 export interface RateLimitInfo {
@@ -561,6 +594,17 @@ export async function streamChat(
         h.onUsage?.(usage)
         break
       }
+      case 'prompt': {
+        const { type: _type, ...prompt } = f
+        h.onPrompt?.(prompt)
+        break
+      }
+      case 'prompt_done':
+        h.onPromptDone?.(f.id, f.outcome)
+        break
+      case 'commands':
+        h.onCommands?.(f.commands ?? [], f.skills ?? [])
+        break
       case 'done':
         end()
         break

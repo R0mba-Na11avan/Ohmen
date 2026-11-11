@@ -9,6 +9,7 @@ Each session carries two histories:
   later switch back to an API model keeps the whole conversation.
 - `engine_session` (optional): the subscription CLI's own session for this chat,
   resumed while the provider and model stay the same.
+- `added_dirs` (optional): folders given to Claude Code with /add-dir.
 - `condensed` / `condenses` (optional): the running summary of older turns and
   each time the chat was condensed (agent/condense.py).
 
@@ -146,6 +147,18 @@ class ChatStore:
             s = self._sessions.get(sid)
             if s is not None:
                 s["engine_session"] = value
+
+    def added_dirs(self, sid: str) -> list[str]:
+        """Folders the user gave the subscription CLI with /add-dir in this chat."""
+        self._fresh()
+        s = self._sessions.get(sid)
+        return list(s.get("added_dirs") or []) if s else []
+
+    def add_dir(self, sid: str, path: str) -> None:
+        with self._edit():
+            s = self._sessions.get(sid)
+            if s is not None and path not in (s.get("added_dirs") or []):
+                s["added_dirs"] = [*(s.get("added_dirs") or []), path]
 
     def set_condensed(self, sid: str, event: dict[str, Any], messages: list[Any]) -> None:
         """The chat was condensed (agent/condense.py): keep the summary for the next

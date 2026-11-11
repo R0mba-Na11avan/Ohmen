@@ -1,7 +1,9 @@
 name: Release
 
 # Push a tag like v0.1.0 to build the installers and attach them to a draft
-# GitHub Release. Review the draft, then publish it.
+# GitHub Release. Review the draft, then publish it: installed apps only see a
+# published (non-draft, non-prerelease) release. They update from its
+# latest.yml / latest-linux.yml and *.blockmap files, so keep those attached.
 on:
   push:
     tags: ["v*"]
@@ -63,6 +65,8 @@ jobs:
             app/release/*.AppImage
             app/release/*.rpm
             app/release/*.deb
+            app/release/*.blockmap
+            app/release/latest*.yml
           if-no-files-found: error
           # Only a hand-off to the release job; the release keeps the files.
           retention-days: 1

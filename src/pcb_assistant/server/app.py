@@ -56,7 +56,7 @@ _autocheck_lock = threading.Lock()
 
 
 def create_app(token: str | None = None) -> FastAPI:
-    app = FastAPI(title="Ohmen sidecar", version="0.1.1")
+    app = FastAPI(title="Ohmen sidecar", version="0.1.2")
     # Added first = innermost: CORS wraps it, so a 401 still carries CORS headers.
     app.add_middleware(TokenGuard, token=token)
     app.add_middleware(
@@ -578,6 +578,15 @@ def create_app(token: str | None = None) -> FastAPI:
             return []
         return DatasheetLibrary.for_project(STATE.project).list(_datasheet_parts())
 
+    @app.get("/datasheets/research", response_model=list[DatasheetEntry])
+    def datasheets_research() -> list:
+        """Documents the agent pulled in while researching (datasheets/.research/)."""
+        from pcb_assistant.datasheets.store import DatasheetLibrary
+
+        if STATE.project is None:
+            return []
+        return DatasheetLibrary.for_project(STATE.project).research()
+
     @app.post("/datasheets/fetch", response_model=list[DatasheetEntry])
     def datasheets_fetch(req: schemas.DatasheetFetchRequest) -> list:
         """Find + download datasheets (one part, or every one still missing)."""
@@ -735,6 +744,15 @@ def create_app(token: str | None = None) -> FastAPI:
 
         ChatStore.for_project(_require_project()).delete(chat_id)
         return schemas.OkResponse(detail=f"deleted {chat_id}")
+
+    @app.post("/chat/prompts/{prompt_id}", response_model=schemas.OkResponse)
+    def chat_prompt_answer(prompt_id: str, req: schemas.PromptAnswer) -> schemas.OkResponse:
+        """The user answered a question or permission card from a running turn."""
+        from pcb_assistant.engines import prompts
+
+        if not prompts.answer(prompt_id, req.model_dump(exclude_none=True)):
+            raise HTTPException(404, "that question is no longer waiting for an answer")
+        return schemas.OkResponse(detail="answered")
 
     # --- streaming chat agent ---
 

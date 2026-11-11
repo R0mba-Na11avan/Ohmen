@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from pcb_assistant.findings.models import Finding
 from pcb_assistant.providers.base import DEFAULT_MODEL
@@ -62,6 +62,15 @@ class UnmuteRequest(BaseModel):
 class OkResponse(BaseModel):
     ok: bool = True
     detail: str = ""
+
+
+class PromptAnswer(BaseModel):
+    """An answer to a subscription CLI's mid-turn prompt (engines/prompts.py)."""
+
+    allow: bool | None = None  # permission: allow or deny
+    always: bool = False  # permission: allow this tool for the rest of the chat
+    answers: dict[str, str] | None = None  # question text -> chosen label(s) or typed text
+    message: str | None = Field(default=None, max_length=2000)  # deny reason / note to the model
 
 
 class PartsRequest(BaseModel):
@@ -223,6 +232,8 @@ class EngineSettingsIn(BaseModel):
     enabled: bool = False
     path: str | None = None
     tos_ack: bool = False
+    user_setup: bool = True  # Claude chat: load the user's skills/plugins
+    full_tools: bool = False  # Claude chat: all built-in tools, each asked for
 
 
 class EnginesPush(BaseModel):

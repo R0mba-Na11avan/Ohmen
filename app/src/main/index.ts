@@ -7,6 +7,7 @@ import { mkdirSync, openSync } from 'node:fs'
 import { delimiter, join, resolve } from 'node:path'
 import { startBrowserFetchServer, type BrowserFetchServer } from './browserFetch'
 import { createKicadProject, revealProject } from './kicadProject'
+import { initUpdater, setUpdateChecks } from './updater'
 import {
   PROVIDERS,
   cleanEngineSettings,
@@ -296,16 +297,18 @@ function registerSettingsIpc(): void {
   }))
   ipcMain.handle('settings:get', () => getSettings())
   // Only the non-secret UI settings are writable from the renderer.
-  ipcMain.handle('settings:set', (_e, partial: Settings) =>
-    setSettings({
+  ipcMain.handle('settings:set', (_e, partial: Settings) => {
+    if (typeof partial.updateChecks === 'boolean') setUpdateChecks(partial.updateChecks)
+    return setSettings({
       ...(partial.selectedModel !== undefined && { selectedModel: partial.selectedModel }),
       ...(isSpecList(partial.recentModels) && { recentModels: partial.recentModels }),
       ...(isSpecList(partial.starredModels) && { starredModels: partial.starredModels }),
       ...(partial.onboardingDone !== undefined && { onboardingDone: partial.onboardingDone }),
       ...((partial.projectClick === 'folder' || partial.projectClick === 'kicad') && { projectClick: partial.projectClick }),
       ...(typeof partial.autoCheck === 'boolean' && { autoCheck: partial.autoCheck }),
-    }),
-  )
+      ...(typeof partial.updateChecks === 'boolean' && { updateChecks: partial.updateChecks }),
+    })
+  })
 }
 
 function isSpecList(v: unknown): v is string[] {
@@ -447,6 +450,13 @@ app.whenReady().then(async () => {
   })
 
   registerSettingsIpc()
+  initUpdater({
+    automatic: getSettings().updateChecks !== false,
+    beforeInstall: () => {
+      quitting = true
+      killSidecar()
+    },
+  })
 
   if (app.isPackaged) mkdirSync(app.getPath('logs'), { recursive: true })
   sidecarPort = await findFreePort()

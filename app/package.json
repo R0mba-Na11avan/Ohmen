@@ -2,7 +2,7 @@
   "name": "ohmen",
   "productName": "Ohmen",
   "desktopName": "ohmen.desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "AI design-review copilot for KiCad: schematic review and parts research, grounded in cited datasheets.",
   "author": {
     "name": "R0mba-Na11avan",
@@ -45,6 +45,7 @@
     "vite": "^5.4.9"
   },
   "dependencies": {
+    "electron-updater": "^6.8.11",
     "katex": "^0.16.22",
     "rehype-katex": "^7.0.1",
     "remark-breaks": "^4.0.0",

@@ -20,6 +20,19 @@ interface AppSettings {
   kicadCliPath?: string
   projectClick?: 'folder' | 'kicad'
   autoCheck?: boolean
+  updateChecks?: boolean
+}
+
+// Mirrors UpdateStatus in src/main/updater.ts.
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'none' | 'available' | 'downloading' | 'ready' | 'error'
+  current: string
+  version?: string
+  percent?: number
+  url: string
+  canInstall: boolean // this install updates itself (Windows installer, AppImage)
+  message?: string
+  checkedAt?: number
 }
 
 declare global {
@@ -53,6 +66,11 @@ declare global {
       appInfo: () => Promise<{ version: string; electron: string; logPath: string | null; keysProtected: boolean }>
       getSettings: () => Promise<AppSettings>
       setSettings: (partial: AppSettings) => Promise<AppSettings>
+
+      updateStatus: () => Promise<UpdateStatus>
+      checkForUpdates: () => Promise<UpdateStatus>
+      installUpdate: () => Promise<void> // restart into a downloaded update, or open its download page
+      onUpdateStatus: (cb: (status: UpdateStatus) => void) => () => void
     }
   }
 }

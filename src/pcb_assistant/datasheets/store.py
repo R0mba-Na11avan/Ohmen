@@ -7,7 +7,8 @@ file the user dropped in by hand always wins.
 
 Documents the agent pulls in while researching (candidate parts that aren't on
 the board, app notes by URL) go to the hidden `datasheets/.research/` folder and
-stay out of the Datasheets tab. Once such a part is placed or added to the BOM,
+stay out of the main Datasheets list (the tab shows them in a collapsed Research
+section). Once such a part is placed or added to the BOM,
 `promote` moves its datasheet up into the main folder.
 """
 from __future__ import annotations
@@ -111,6 +112,15 @@ class DatasheetLibrary:
             e.refs = p.refs
             out.append(e)
         return out
+
+    def research(self) -> list[DatasheetEntry]:
+        """Documents pulled in while researching (not on the board), newest first.
+        Only ones whose file is still there."""
+        out = [
+            e for e in self._load().values()
+            if e.origin == "research" and e.status == "ok" and (self.project / (e.file or "")).is_file()
+        ]
+        return sorted(out, key=lambda e: e.fetched_at, reverse=True)
 
     # --- adding files ---
 

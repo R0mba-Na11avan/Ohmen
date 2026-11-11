@@ -50,4 +50,12 @@ deb:
 rpm:
   depends: [libsecret]
 
-publish: null
+# Where installed apps look for updates (electron-updater, app/src/main/updater.ts).
+# `npm run dist` passes --publish never, so a build never uploads anything; this
+# only writes app-update.yml into the app and latest*.yml next to the installers,
+# which the release workflow attaches to the GitHub Release.
+publish:
+  provider: github
+  owner: R0mba-Na11avan
+  repo: Ohmen
+  releaseType: release

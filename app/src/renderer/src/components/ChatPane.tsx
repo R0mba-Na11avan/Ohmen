@@ -12,6 +12,7 @@ import {
   uploadChatImage,
   type ChatErrorInfo,
   type ChatImage,
+  type ChatPrompt,
   type ChatSessionSummary,
   type CondenseEvent,
   type FindingCounts,
@@ -32,6 +33,7 @@ import { EffortPicker } from './EffortPicker'
 import { CopyButton, Markdown } from './Markdown'
 import { LogoMark } from './marks'
 import { ModelPicker } from './ModelPicker'
+import { PromptCard } from './PromptCard'
 import { ReviewTeam, applyProgress, compact, usageLine } from './ReviewTeam'
 
 interface ToolEvent {
@@ -52,6 +54,7 @@ interface Turn {
   diagram?: { note: string; mermaid?: string } // mermaid only live; history keeps the note
   footprints?: string[] // generated footprint proposals awaiting (or past) the engineer's call
   notices?: string[] // e.g. "continuing on your API key"
+  prompts?: { prompt: ChatPrompt; outcome?: string }[] // Claude Code asking mid-turn (live only)
   stopped?: boolean // the user stopped the reply part-way
   rateLimit?: RateLimitInfo // a subscription's usage window after this turn (live only)
   usage?: TurnUsage | null // what this turn cost in tokens
@@ -67,6 +70,26 @@ interface Attachment {
 }
 
 const REVIEW_TOOLS = new Set(['run_check', 'run_review', 'run_erc', 'run_drc'])
+
+// Claude Code's slash commands and skills, as its last run listed them; the
+// composer suggests them after a "/". /add-dir is Ohmen's own.
+const COMMANDS_KEY = 'ohmen.claudeCommands'
+const ADD_DIR = 'add-dir'
+function loadCommands(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(COMMANDS_KEY) ?? '[]')
+    return Array.isArray(v) ? v.filter((s): s is string => typeof s === 'string') : []
+  } catch {
+    return []
+  }
+}
+function saveCommands(list: string[]) {
+  try {
+    localStorage.setItem(COMMANDS_KEY, JSON.stringify(list))
+  } catch {
+    // storage blocked: suggestions just won't survive a restart
+  }
+}
 const DIAGRAM_PREFIX = 'Diagram updated: '
 
 // A reloaded turn's footprint cards come from its create_footprint tool results.
@@ -436,6 +459,22 @@ export function ChatPane({
   // a Condense now with no turn after it yet: shown below the thread
   const [trailingCondense, setTrailingCondense] = useState<CondenseEvent | 'busy' | string | null>(null)
   const [msg, setMsg] = useState('')
+  const [commands, setCommands] = useState<string[]>(loadCommands)
+  const [cmdSel, setCmdSel] = useState(0)
+  // "/" + a partial name, on a Claude Code model: matching commands, prefix matches first
+  const suggestions = useMemo(() => {
+    if (!models.model.startsWith('claude-sub:')) return []
+    const m = /^\/(\S*)$/.exec(msg)
+    if (!m) return []
+    const q = m[1].toLowerCase()
+    const all = [ADD_DIR, ...commands.filter((c) => c !== ADD_DIR)]
+    const hits = all
+      .filter((c) => c.toLowerCase().includes(q))
+      .sort((a, b) => Number(!a.toLowerCase().startsWith(q)) - Number(!b.toLowerCase().startsWith(q)))
+      .slice(0, 8)
+    return hits.length === 1 && hits[0].toLowerCase() === q ? [] : hits
+  }, [msg, models.model, commands])
+  useEffect(() => setCmdSel(0), [suggestions.length])
   const [busy, setBusy] = useState(false)
   const [sidebarW, setSidebarW] = useState(readSidebar)
   const [attachments, setAttachments] = useState<Attachment[]>([])
@@ -726,6 +765,17 @@ export function ChatPane({
       onCondensed: (event) => patchLast((t) => ({ ...t, condensing: false, condensed: event })),
       onRateLimit: (info) => patchLast((t) => ({ ...t, rateLimit: info })),
       onUsage: (usage) => patchLast((t) => ({ ...t, usage })),
+      onPrompt: (prompt) => patchLast((t) => ({ ...t, prompts: [...(t.prompts ?? []), { prompt }] })),
+      onPromptDone: (id, outcome) =>
+        patchLast((t) => ({
+          ...t,
+          prompts: t.prompts?.map((p) => (p.prompt.id === id ? { ...p, outcome } : p)),
+        })),
+      onCommands: (cmds, skills) => {
+        const list = [...new Set([...skills, ...cmds])]
+        setCommands(list)
+        saveCommands(list)
+      },
       onDone: () => {
         setBusy(false)
         loadSessions()
@@ -918,6 +968,11 @@ export function ChatPane({
                   </div>
                 )}
 
+                {/* Claude Code asking: tool permission, or a question to answer */}
+                {t.prompts?.map((p) => (
+                  <PromptCard key={p.prompt.id} prompt={p.prompt} outcome={p.outcome} live={live(i)} />
+                ))}
+
                 {/* review team — one row per reviewer, live while they work */}
                 {t.team && t.team.length > 0 && <ReviewTeam rows={t.team} live={live(i)} />}
 
@@ -1085,6 +1140,39 @@ export function ChatPane({
                 ))}
               </div>
             )}
+            {/* after a "/" on Claude Code: its skills and commands; Tab or Enter completes */}
+            {suggestions.length > 0 && (
+              <div role="listbox" aria-label="Commands" style={{ display: 'grid', padding: '6px 6px 0' }}>
+                {suggestions.map((c, k) => (
+                  <button
+                    key={c}
+                    role="option"
+                    aria-selected={k === cmdSel}
+                    onMouseDown={(e) => e.preventDefault()} // keep the caret in the field
+                    onClick={() => {
+                      setMsg(`/${c} `)
+                      inputRef.current?.focus()
+                    }}
+                    style={{
+                      textAlign: 'left',
+                      border: 'none',
+                      padding: '3px 8px',
+                      fontFamily: type.mono,
+                      fontSize: type.size.sm,
+                      background: k === cmdSel ? color.copperFaint : 'transparent',
+                      color: k === cmdSel ? color.copperBright : color.inkSecondary,
+                    }}
+                  >
+                    /{c}
+                    {c === ADD_DIR && (
+                      <span style={{ fontFamily: type.sans, color: color.inkMuted, marginLeft: 8 }}>
+                        let Claude Code read another folder
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
             {/* Enter sends; Shift+Enter adds a line (skipped mid-IME composition);
                 Esc stops a reply in flight. */}
             <textarea
@@ -1102,7 +1190,14 @@ export function ChatPane({
                 addFiles(files)
               }}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+                if (suggestions.length > 0 && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+                  e.preventDefault()
+                  const n = suggestions.length
+                  setCmdSel((s) => (s + (e.key === 'ArrowDown' ? 1 : n - 1)) % n)
+                } else if (suggestions.length > 0 && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+                  e.preventDefault()
+                  setMsg(`/${suggestions[cmdSel] ?? suggestions[0]} `)
+                } else if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault()
                   send()
                 } else if (e.key === 'Escape' && busy) {

@@ -223,6 +223,31 @@ export function EngineCard({ id, engines }: { id: EngineId; engines: EnginesStat
         </div>
       )}
 
+      {id === 'claude' && (
+        <div style={{ display: 'grid', gap: 6, fontSize: type.size.sm, color: color.inkSecondary, lineHeight: type.line.sm }}>
+          <Toggle
+            on={engines.settings.claude?.userSetup !== false}
+            disabled={engines.busy}
+            onChange={(v) => engines.save({ claude: { ...engines.settings.claude, userSetup: v } })}
+            label="Use my Claude Code skills and plugins in the chat"
+          />
+          <span style={{ color: color.inkMuted, fontSize: type.size.xs }}>
+            Loads your ~/.claude skills, plugins and CLAUDE.md, so /skill-name works like in Claude Code. Your hooks
+            stay off.
+          </span>
+          <Toggle
+            on={!!engines.settings.claude?.fullTools}
+            disabled={engines.busy}
+            onChange={(v) => engines.save({ claude: { ...engines.settings.claude, fullTools: v } })}
+            label="Allow edits and commands"
+          />
+          <span style={{ color: color.inkMuted, fontSize: type.size.xs }}>
+            Off: Claude Code can only read the project (and folders you /add-dir). On: it gets every Claude Code
+            tool, including editing files and running commands. Each one still waits for your Allow in the chat.
+          </span>
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
         <input
           value={path}

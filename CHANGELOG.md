@@ -4,6 +4,35 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-11-11
+
+### Added
+
+- Update checks. Installed copies look for a newer GitHub release shortly after
+  launch and every few hours. The Windows installer and the AppImage download it
+  in the background and install on restart (**Restart to update** in the
+  corner); the .deb and .rpm builds link to the release. Settings > About has
+  Check now and an off switch. Releases now carry `latest*.yml` and
+  `*.blockmap` files for this.
+- Claude Code in the chat asks you instead of silently failing: a read outside
+  the project (or, with the new **Allow edits and commands** setting, an edit or
+  a command) shows an Allow / Allow for this chat / Deny card, and its
+  questions (AskUserQuestion) show as cards with its options and a free-text
+  answer. The chat trace shows its own tool calls and skills too.
+- Your Claude Code skills, plugins and CLAUDE.md work in the chat (`/skill-name`,
+  suggested as you type `/`); your hooks stay off. Settings > Advanced can
+  switch this off. `/add-dir <folder>` lets it read another folder for the rest
+  of the chat. Claude Code now works in the project folder, read-only by
+  default (Read, Glob, Grep).
+- Datasheets shows documents pulled in while researching in a collapsed
+  Research section.
+- The chat agent knows it is Ohmen, and what the app's tabs do.
+
+### Fixed
+
+- Long Ohmen tool calls on Claude Code (a design review) no longer hit the CLI's
+  one-minute MCP timeout.
+
 ## [0.1.1] - 2026-10-24
 
 ### Added
@@ -66,5 +95,6 @@ First public release.
 - Stopping a reply mid design-review stops the chat, but reviewers already
   running finish their current call.
 
+[0.1.2]: https://github.com/R0mba-Na11avan/Ohmen/releases/tag/v0.1.2
 [0.1.1]: https://github.com/R0mba-Na11avan/Ohmen/releases/tag/v0.1.1
 [0.1.0]: https://github.com/R0mba-Na11avan/Ohmen/releases/tag/v0.1.0

@@ -2,7 +2,8 @@
 
 Kept apart from API-key credentials: nothing secret lives here — the CLIs hold
 their own logins. Env vars are the CLI/dev fallback:
-  PCB_ENGINE_CODEX=1, PCB_ENGINE_CLAUDE=1 (enable), PCB_CODEX_PATH, PCB_CLAUDE_PATH.
+  PCB_ENGINE_CODEX=1, PCB_ENGINE_CLAUDE=1 (enable), PCB_CODEX_PATH, PCB_CLAUDE_PATH,
+  PCB_CLAUDE_USER_SETUP=0 (isolate chat from ~/.claude), PCB_CLAUDE_FULL_TOOLS=1.
 """
 from __future__ import annotations
 
@@ -24,6 +25,12 @@ class EngineSettings:
     enabled: bool = False
     path: str | None = None
     tos_ack: bool = False  # Claude only: the user accepted the ToS warning
+    # Claude only, chat only: load the user's own skills, plugins and CLAUDE.md
+    # (~/.claude; their hooks stay off), so /skill-name works as in Claude Code.
+    user_setup: bool = True
+    # Claude only, chat only: every built-in tool (edit, write, shell, web), each
+    # gated by an Allow/Deny card. Off: read-only tools on the project folder.
+    full_tools: bool = False
 
 
 @dataclass
@@ -38,8 +45,16 @@ _state = _State()
 
 
 def _from_env(engine: str) -> EngineSettings:
-    on = os.environ.get(f"PCB_ENGINE_{engine.upper()}", "") in ("1", "true", "yes")
-    return EngineSettings(enabled=on, path=os.environ.get(f"PCB_{engine.upper()}_PATH") or None, tos_ack=on)
+    def flag(name: str, default: bool) -> bool:
+        v = os.environ.get(name)
+        return default if v is None else v in ("1", "true", "yes")
+
+    on = flag(f"PCB_ENGINE_{engine.upper()}", False)
+    return EngineSettings(
+        enabled=on, path=os.environ.get(f"PCB_{engine.upper()}_PATH") or None, tos_ack=on,
+        user_setup=flag(f"PCB_{engine.upper()}_USER_SETUP", True),
+        full_tools=flag(f"PCB_{engine.upper()}_FULL_TOOLS", False),
+    )
 
 
 def settings(engine: str) -> EngineSettings:
@@ -71,6 +86,8 @@ def set_all(payload: dict) -> None:
             enabled=bool(e.get("enabled")),
             path=(e.get("path") or "").strip() or None,
             tos_ack=bool(e.get("tos_ack")),
+            user_setup=bool(e.get("user_setup", True)),
+            full_tools=bool(e.get("full_tools")),
         )
     routes = {
         v: r for v, r in (payload.get("preferred_route") or {}).items()

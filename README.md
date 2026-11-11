@@ -108,7 +108,11 @@ project has a Mac to build and test it. Help is welcome
   - a ChatGPT plan, through the [Codex CLI](https://github.com/openai/codex) (experimental)
 
   Settings › Advanced also has an experimental Claude Code CLI route. It is off by
-  default; read Anthropic's terms for your plan before turning it on.
+  default; read Anthropic's terms for your plan before turning it on. In the chat
+  it can use your own Claude Code skills (`/skill-name`), asks you questions and
+  for permission (to read outside the project, or, if you allow edits and
+  commands, to change files) as cards you answer in Ohmen, and takes
+  `/add-dir <folder>` to read another folder.
 - **Optional:** a free [DigiKey API](https://developer.digikey.com/) app for
   stock and pricing in the BOM.
 
@@ -123,6 +127,11 @@ project has a Mac to build and test it. Help is welcome
 4. Click a finding to see its evidence: the rule or datasheet page it rests on.
    Open the datasheet at that page to judge it yourself.
 5. Ask follow-up questions in **Chat**, fill the **BOM**, or open **Diagram**.
+
+Installed copies check GitHub for a newer release now and then. The Windows
+installer and the AppImage download it in the background and install it when you
+restart (the corner shows **Restart to update**); the .deb and .rpm builds link
+to the download. Turn checks off in Settings › About.
 
 Ohmen writes its working files (chats, BOM, findings, cached datasheet
 text) into a `.pcb_assistant/` folder inside your project, and datasheet PDFs

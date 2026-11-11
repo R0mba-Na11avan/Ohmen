@@ -12,6 +12,7 @@ import { useModel } from './hooks/useModel'
 import { ModelPicker } from './components/ModelPicker'
 import { Onboarding } from './components/Onboarding'
 import { SettingsModal, type SettingsTab } from './components/SettingsModal'
+import { UpdatePill } from './components/UpdateNotice'
 import { SyncBar, projectName } from './components/SyncBar'
 import { FindingsList } from './components/FindingsList'
 import { BomTable } from './components/BomTable'
@@ -174,7 +175,16 @@ export default function App() {
           app-wide controls float in the corner over the start screen. */}
       {summary ? (
         <div className={leaving ? 'bar-out' : undefined}>
-          <SyncBar summary={summary} onSwitch={switchProject} right={settingsButton} />
+          <SyncBar
+            summary={summary}
+            onSwitch={switchProject}
+            right={
+              <span style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <UpdatePill />
+                {settingsButton}
+              </span>
+            }
+          />
         </div>
       ) : (
         <div
@@ -188,6 +198,7 @@ export default function App() {
             gap: 14,
           }}
         >
+          <UpdatePill />
           <ModelPicker state={models} onManage={manageProviders} />
           {settingsButton}
         </div>

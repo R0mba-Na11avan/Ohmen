@@ -25,4 +25,16 @@ contextBridge.exposeInMainWorld('pcb', {
   appInfo: () => ipcRenderer.invoke('app:info'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (partial: unknown) => ipcRenderer.invoke('settings:set', partial),
+
+  updateStatus: () => ipcRenderer.invoke('update:status'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  // Returns an unsubscribe.
+  onUpdateStatus: (cb: (status: unknown) => void) => {
+    const listener = (_e: unknown, status: unknown) => cb(status)
+    ipcRenderer.on('update:status', listener)
+    return () => {
+      ipcRenderer.removeListener('update:status', listener)
+    }
+  },
 })

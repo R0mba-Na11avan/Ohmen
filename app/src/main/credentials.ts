@@ -29,6 +29,7 @@ export interface Settings {
   kicadCliPath?: string // '' / absent = auto-detect
   projectClick?: 'folder' | 'kicad' // clicking the project name in the header
   autoCheck?: boolean // re-run the free rule checks when the schematic changes
+  updateChecks?: boolean // look for a newer release now and then (default on)
   localBaseUrl?: string
   localOverrides?: Overrides
   engines?: EngineSettings
@@ -43,7 +44,9 @@ export type Route = 'api' | 'sub'
 
 export interface EngineSettings {
   codex?: { enabled?: boolean; path?: string }
-  claude?: { enabled?: boolean; path?: string; tosAck?: boolean }
+  // userSetup: the chat loads the user's ~/.claude skills/plugins (default on);
+  // fullTools: every built-in tool, each one asked for in the chat (default off)
+  claude?: { enabled?: boolean; path?: string; tosAck?: boolean; userSetup?: boolean; fullTools?: boolean }
   preferredRoute?: { claude?: Route; openai?: Route }
   fallbackToApi?: boolean // a spent subscription continues on the vendor's API key
 }
@@ -58,7 +61,11 @@ export function cleanEngineSettings(input: unknown): EngineSettings {
       ? {
           enabled: Boolean(e.enabled),
           path: typeof e.path === 'string' ? e.path.trim() : undefined,
-          ...(claude && { tosAck: Boolean(e.tosAck) }),
+          ...(claude && {
+            tosAck: Boolean(e.tosAck),
+            userSetup: e.userSetup !== false,
+            fullTools: Boolean(e.fullTools),
+          }),
         }
       : undefined
   const routes = i.preferredRoute ?? {}
@@ -79,7 +86,13 @@ export function enginesPayload(): Record<string, unknown> {
   return {
     engines: {
       codex: { enabled: !!e.codex?.enabled, path: e.codex?.path || null },
-      claude: { enabled: !!e.claude?.enabled, path: e.claude?.path || null, tos_ack: !!e.claude?.tosAck },
+      claude: {
+        enabled: !!e.claude?.enabled,
+        path: e.claude?.path || null,
+        tos_ack: !!e.claude?.tosAck,
+        user_setup: e.claude?.userSetup !== false,
+        full_tools: !!e.claude?.fullTools,
+      },
     },
     preferred_route: e.preferredRoute ?? {},
     fallback_to_api: !!e.fallbackToApi,
