@@ -334,6 +334,14 @@ def _box(x: float, y: float, w: float, h: float, rotation: float = 0.0):
     return (x - w / 2, y - h / 2, x + w / 2, y + h / 2)
 
 
+def _on_pad(x: float, y: float, r: float, pad) -> bool:
+    """Whether a hole of radius r at (x, y) touches the pad, however the pad is turned."""
+    a = math.radians(pad.rotation)
+    dx, dy = x - pad.x, y - pad.y
+    u, v = dx * math.cos(a) - dy * math.sin(a), dx * math.sin(a) + dy * math.cos(a)  # in the pad's own frame
+    return abs(u) < pad.width / 2 + r - 1e-9 and abs(v) < pad.height / 2 + r - 1e-9
+
+
 def _overlap(a, b) -> bool:
     return a[0] < b[2] - 1e-9 and b[0] < a[2] - 1e-9 and a[1] < b[3] - 1e-9 and b[1] < a[3] - 1e-9
 
@@ -460,8 +468,13 @@ def check(spec) -> tuple[list[str], list[str]]:
         if not pads:
             errors.append("no pads")
         for p in pads:
+            if not p.number.strip():  # an unnumbered pad is a paste window to every later check
+                errors.append(f"pad at ({p.x}, {p.y}): give it a number (shield and mounting pads can share one)")
             if p.width <= 0 or p.height <= 0:
                 errors.append(f"pad {p.number}: size must be positive")
+            if p.shape == "circle" and abs(p.width - p.height) > 1e-9:
+                errors.append(f"pad {p.number}: a circle has one diameter, so width and height must match "
+                              "(oval for a longer pad)")
             hole = drill_size(p.drill)
             if hole and (min(hole) <= 0 or hole[0] >= p.width or hole[1] >= p.height):
                 errors.append(f"pad {p.number}: drill doesn't leave copper around the hole")
@@ -480,7 +493,7 @@ def check(spec) -> tuple[list[str], list[str]]:
             if min(size) <= 0:
                 errors.append(f"hole at ({h.x}, {h.y}): drill must be positive")
                 continue
-            hit = next((p for p, b in zip(square, boxes) if _overlap(_box(h.x, h.y, *size), b)), None)
+            hit = next((p for p in pads if _on_pad(h.x, h.y, max(size) / 2, p)), None)
             if hit:
                 errors.append(f"hole at ({h.x}, {h.y}) lands on pad {hit.number}")
     if not math.isfinite(sum(d.mid for d in dims(spec).values())):

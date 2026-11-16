@@ -202,3 +202,18 @@ def test_the_tool_refuses_with_reasons_and_labels_from_the_symbol(tmp_path, desi
     assert p.spec["labels"]["text"] == {"1": "0V"} and p.spec["labels"]["auto"] == {"2": "3V3", "10": "IO0"}
     assert p.kicad_mod.count("(fp_text user") == 4  # three labels and the fab reference
     assert check(spec_of(p.spec))[0] == []
+
+
+def test_polarity_marks_stay_visible_and_off_copper():
+    base = {"family": "custom", "package": "X", "drawing": "p.1", "source": "p.1"}
+    pad = lambda n, x, y: {"number": n, "x": x, "y": y, "width": 0.8, "height": 0.8}
+    # the body reaches past pad 1: the bar sits just inside the outline, not on top of it
+    fp, _ = build(spec_of({**base, "body_x": 6.0, "body_y": 3.0, "pads": [pad("1", -1.5, 0), pad("2", 1.5, 0)],
+                           "silk": {"polarity": "cathode_bar"}}), "D1")
+    upright = sorted(ln.x1 for ln in fp.lines if ln.layer == "F.SilkS" and ln.x1 == ln.x2)
+    assert upright[:2] == [-3.11, -2.81]
+    # a pad where the + would go: it moves to the other corner
+    fp, _ = build(spec_of({**base, "body_x": 2.0, "body_y": 1.0, "silk": {"polarity": "plus"},
+                           "pads": [pad("1", -1.5, 0), pad("2", 1.5, 0), pad("3", -2.4, -1.8)]}), "C1")
+    plus = [ln for ln in fp.lines if ln.layer == "F.SilkS" and ln.x1 < -2]
+    assert len(plus) == 2 and all(ln.y1 > 0 and ln.y2 > 0 for ln in plus)

@@ -371,23 +371,36 @@ def _polarity(fp: Footprint, p1: Pad, mark: str, box, keep: float, keepouts) -> 
     x0, y0, x1, y1 = box  # the silkscreen outline
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
     px0, py0, px1, py1 = p1.bbox[0] - keep, p1.bbox[1] - keep, p1.bbox[2] + keep, p1.bbox[3] + keep
-    arm, off = 0.3, 0.55
+    arm, off, inset = 0.3, 0.55, 0.3
     if abs(p1.x - cx) >= abs(p1.y - cy):  # pad 1 at the left or right end
-        x = min(x0, px0) if p1.x < cx else max(x1, px1)
-        top = min(y0, py0)
+        first = p1.x < cx
+        x = min(x0, px0) if first else max(x1, px1)
+        top, bottom = min(y0, py0), max(y1, py1)
         if mark == "cathode_bar":
-            fp.lines += _clip(Line(round(x, 4), round(top, 4), round(x, 4), round(max(y1, py1), 4),
+            if x in (x0, x1):  # the outline is already there: a second line just inside it
+                x += inset if first else -inset
+            fp.lines += _clip(Line(round(x, 4), round(top, 4), round(x, 4), round(bottom, 4),
                                    "F.SilkS", SILK_WIDTH), keepouts)
             return
-        at = (x - off if p1.x < cx else x + off, top - off)
+        out = x - off if first else x + off
+        spots = [(out, top - off), (out, bottom + off)]
     else:  # at the top or bottom end
-        y = min(y0, py0) if p1.y < cy else max(y1, py1)
-        left = min(x0, px0)
+        first = p1.y < cy
+        y = min(y0, py0) if first else max(y1, py1)
+        left, right = min(x0, px0), max(x1, px1)
         if mark == "cathode_bar":
-            fp.lines += _clip(Line(round(left, 4), round(y, 4), round(max(x1, px1), 4), round(y, 4),
+            if y in (y0, y1):
+                y += inset if first else -inset
+            fp.lines += _clip(Line(round(left, 4), round(y, 4), round(right, 4), round(y, 4),
                                    "F.SilkS", SILK_WIDTH), keepouts)
             return
-        at = (left - off, y - off if p1.y < cy else y + off)
-    ax, ay = round(at[0], 4), round(at[1], 4)
-    fp.lines += [Line(round(ax - arm, 4), ay, round(ax + arm, 4), ay, "F.SilkS", SILK_WIDTH),
-                 Line(ax, round(ay - arm, 4), ax, round(ay + arm, 4), "F.SilkS", SILK_WIDTH)]
+        out = y - off if first else y + off
+        spots = [(left - off, out), (right + off, out)]
+
+    def free(at):
+        return _clear([(at[0] - arm, at[1] - arm), (at[0] + arm, at[1] + arm)], keepouts)
+
+    ax, ay = (round(v, 4) for v in next((s for s in spots if free(s)), spots[0]))
+    for ln in (Line(round(ax - arm, 4), ay, round(ax + arm, 4), ay, "F.SilkS", SILK_WIDTH),
+               Line(ax, round(ay - arm, 4), ax, round(ay + arm, 4), "F.SilkS", SILK_WIDTH)):
+        fp.lines += _clip(ln, keepouts)  # neither corner free: at least kept off copper
