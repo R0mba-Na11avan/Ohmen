@@ -101,6 +101,38 @@ class FootprintStore:
         return self._set(pid, status="accepted", file=target.relative_to(self.project).as_posix())
 
 
+def footprint_files(project_dir: str | Path) -> dict[str, tuple[int, int]]:
+    """Every footprint file in the project as (modified, size). Taken before a
+    chat turn, so `unchecked` can tell what the turn wrote."""
+    root = Path(project_dir)
+    found = {}
+    for f in root.rglob("*.kicad_mod"):
+        try:
+            st = f.stat()
+        except OSError:
+            continue
+        found[f.relative_to(root).as_posix()] = (st.st_mtime_ns, st.st_size)
+    return found
+
+
+def unchecked(project_dir: str | Path, before: dict[str, tuple[int, int]]) -> list[str]:
+    """Footprint files written or changed since `before` that aren't a
+    proposal's own text: something went around create_footprint."""
+    root = Path(project_dir)
+    ours = {p.kicad_mod for p in FootprintStore(root).list()}
+    stray = []
+    for rel, stat in sorted(footprint_files(root).items()):
+        if before.get(rel) == stat:
+            continue
+        try:
+            text = (root / rel).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if text not in ours:
+            stray.append(rel)
+    return stray
+
+
 def pad_table(fp, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """The footprint's lands and bare holes, as the card lists them and as
     KiCad's read-back is compared against."""

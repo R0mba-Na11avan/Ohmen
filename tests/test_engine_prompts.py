@@ -162,7 +162,8 @@ def test_claude_chat_run_routes_prompts_to_the_app(tmp_path, monkeypatch):
         assert _flag(args, "--permission-mode") == "default"
         assert _flag(args, "--tools") == "Read,Glob,Grep,AskUserQuestion,Skill"
         assert _flag(args, "--setting-sources") == "user"
-        assert json.loads(_flag(args, "--settings")) == {"disableAllHooks": True}
+        own = json.loads(_flag(args, "--settings"))  # outranks the user's: no hooks, no hand-written footprint
+        assert own == {"disableAllHooks": True, "permissions": {"deny": ["Edit(**/*.kicad_mod)"]}}
         assert "--disable-slash-commands" not in args
         added = [args[i + 1] for i, a in enumerate(args) if a == "--add-dir"]
         assert str(extra) in added and len(added) == 2  # + the run's temp dir; a missing folder is dropped
@@ -173,6 +174,7 @@ def test_claude_chat_run_routes_prompts_to_the_app(tmp_path, monkeypatch):
         args = _claude_run(monkeypatch, ask=lambda p: None, project_dir=tmp_path)["args"]
         assert _flag(args, "--tools") == "default"
         assert _flag(args, "--setting-sources") == "" and "--disable-slash-commands" in args
+        assert "kicad_mod" in _flag(args, "--settings")
     finally:
         engine_config.reset()
 
@@ -288,3 +290,43 @@ def test_slash_command_stays_first_in_a_fresh_seeded_session(tmp_path, monkeypat
     _turn(tmp_path, "/tdd plan it", "claude-sub:opus", sid)  # model switch: a fresh session, seeded
     assert calls[1]["prompt"] == "/tdd plan it"
     assert "Earlier in this conversation:" in calls[1]["system"]
+
+
+def test_a_footprint_written_around_the_tool_is_caught_after_the_turn(tmp_path, monkeypatch):
+    from pcb_assistant.engines import dispatch
+    from pcb_assistant.footprints.proposals import FootprintProposal, FootprintStore
+
+    store = FootprintStore(tmp_path)
+    store.add(FootprintProposal(id="p1", part="U1", name="Checked", family="chip", package="0603",
+                                spec={}, kicad_mod='(footprint "Checked")'))
+    (tmp_path / "lib.pretty").mkdir()
+    (tmp_path / "lib.pretty" / "old.kicad_mod").write_text("(footprint old)", encoding="utf-8")
+    turns = [
+        lambda: store.accept("p1"),  # the card's own write
+        lambda: (tmp_path / "lib.pretty" / "by_script.kicad_mod").write_text("(footprint x)", encoding="utf-8"),
+        lambda: None,
+        lambda: None,
+    ]
+    calls = []
+
+    def run(model_spec, system, prompt, *, on_event=None, **kw):
+        calls.append(prompt)
+        turns[len(calls) - 1]()
+        on_event({"type": "token", "text": "done"})
+        return EngineResult(text="", session_id="cli-1", usage=Usage(requests=1))
+
+    monkeypatch.setattr(dispatch, "run", run)
+    frames = _turn(tmp_path, "accept it", "claude-sub:sonnet")
+    sid = frames[0]["chat_id"]
+    assert not [f for f in frames if f["type"] == "notice"]
+
+    frames = _turn(tmp_path, "make me a footprint", "claude-sub:sonnet", sid)
+    (notice,) = [f["text"] for f in frames if f["type"] == "notice"]
+    assert "lib.pretty/by_script.kicad_mod" in notice and "old.kicad_mod" not in notice and "unverified" in notice
+
+    frames = _turn(tmp_path, "/tdd go on", "claude-sub:sonnet", sid)  # the model hears of it once, after the command
+    assert calls[2].startswith("/tdd go on") and "lib.pretty/by_script.kicad_mod" in calls[2]
+    assert "create_footprint" in calls[2] and "by_script" not in calls[1]
+    assert not [f for f in frames if f["type"] == "notice"]
+    _turn(tmp_path, "thanks", "claude-sub:sonnet", sid)
+    assert "by_script" not in calls[3]

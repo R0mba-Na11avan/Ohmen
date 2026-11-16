@@ -20,7 +20,10 @@ Interactive chat (`ask` given) loosens this on purpose, Claude Code-style:
   blocks until the user answers; `--permission-mode default`, so a user's own
   defaultMode can't skip that;
 - optionally the user's own setup (`--setting-sources user`: skills, plugins,
-  CLAUDE.md), so their /skill-name commands work; their hooks stay off.
+  CLAUDE.md), so their /skill-name commands work; their hooks stay off;
+- a footprint file is never written by hand: `decide` refuses it, a deny rule
+  in `--settings` covers tools the user's own settings allow outright, and the
+  chat checks afterwards for one a shell command wrote (agent.engine_stream).
 
 Policy: Anthropic's Consumer Terms restrict Pro/Max credentials to Claude Code
 and claude.ai. This engine is off by default and gated behind the ToS
@@ -56,7 +59,10 @@ DEFAULT_TIMEOUT = 1800
 _STRIP_ENV = ("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT")
 READ_TOOLS = ("Read", "Glob", "Grep", "AskUserQuestion")
 PERMISSION_TOOL = f"mcp__{mcp_bridge.SERVER_NAME}__{mcp_bridge.PERMISSION_TOOL}"
-NO_HOOKS = json.dumps({"disableAllHooks": True})
+# The chat's own settings, which outrank the user's: their hooks stay off, and a
+# footprint file can't be written even by a tool they have allowed for good
+# (an allowed tool never reaches `decide`). An Edit rule covers every file tool.
+CHAT_SETTINGS = json.dumps({"disableAllHooks": True, "permissions": {"deny": ["Edit(**/*.kicad_mod)"]}})
 
 # Asks the user something and blocks for the answer (None: stopped, or no answer).
 #   {"kind": "permission", "tool", "input"}   -> {"allow": bool, "message"?: str}
@@ -225,9 +231,10 @@ def run(
                 "--tools", tools,
             ]
             if interactive:
-                args += ["--permission-mode", "default", "--permission-prompt-tool", PERMISSION_TOOL]
+                args += ["--permission-mode", "default", "--permission-prompt-tool", PERMISSION_TOOL,
+                         "--settings", CHAT_SETTINGS]
                 if prefs.user_setup:
-                    args += ["--setting-sources", "user", "--settings", NO_HOOKS]
+                    args += ["--setting-sources", "user"]
                 else:
                     args += ["--setting-sources", "", "--disable-slash-commands"]
                 extra = [str(work)] if cwd != work else []
