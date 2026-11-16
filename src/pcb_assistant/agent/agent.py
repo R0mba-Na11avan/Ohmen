@@ -703,9 +703,17 @@ def build_toolset(
         if not hits:
             return f"No footprint '{footprint}' made by Ohmen here. Call with no argument to list them."
         p = hits[-1]  # the newest
+        try:  # only what was set: the defaults would bury it
+            from pydantic import TypeAdapter
+
+            from pcb_assistant.footprints.spec import FootprintSpec
+
+            spec = TypeAdapter(FootprintSpec).validate_python(p.spec).model_dump(exclude_defaults=True)
+        except ValueError:  # made by an older Ohmen
+            spec = p.spec
         return (f"[{p.id}] {p.name} for part '{p.part}' ({p.status}). Change the spec and call "
                 f"create_footprint(part='{p.part}', spec=..., propose=True) with \"name\": \"{p.name}\" "
-                f"to replace it.\nspec: {json.dumps({**p.spec, 'name': p.name})}")
+                f"to replace it.\nspec: {json.dumps({**spec, 'name': p.name})}")
 
     @toolset.tool_plain
     def get_symbol_pins(symbol: str = "") -> str:
@@ -764,9 +772,9 @@ def build_toolset(
         if spec.labels and spec.labels.from_symbol:
             if symbol is None:
                 return "labels.from_symbol needs \"symbol\": say which symbol the pin names come from."
-            named = {p.number: p.name for p in symbol[1] if p.name}
-            spec = spec.model_copy(update={"labels": spec.labels.model_copy(
-                update={"text": {**named, **spec.labels.text}})})  # kept in the spec: it rebuilds the same
+            named = {p.number: p.name for p in symbol[1] if p.name and p.number not in spec.labels.text}
+            # kept in the spec, so it rebuilds the same without the symbol at hand
+            spec = spec.model_copy(update={"labels": spec.labels.model_copy(update={"auto": named})})
         try:
             fp, built = build(spec, part)
         except Refused as e:
@@ -793,6 +801,8 @@ def build_toolset(
                 f"below; nothing is written until then. On accept it goes to {proposals.LIB_DIR} as "
                 f"'{proposals.LIB_NAME}:{p.name}' for them to assign on the symbol."
                 + (f"\nWarnings shown on the card:{extra}" if extra else "") + versus
+                + "".join(f"\nRepaired: {f}" for f in p.fixes)
+                + "".join(f"\nShown in red on the card: {r}" for r in p.risks)
                 + f"\nKiCad read-back ({p.kicad_check.get('status')}): {p.kicad_check.get('detail')}")
 
     @toolset.tool_plain

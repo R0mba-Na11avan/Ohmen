@@ -245,6 +245,14 @@ export interface FootprintPad {
   w: number
   h: number
   drill: number | null
+  drill_h?: number | null // a slot: drill is its width, this its height
+  rotation?: number
+  hole?: boolean // a bare, non-plated hole: no number
+  name?: string // the symbol's pin name, when the footprint follows a symbol
+}
+export interface FootprintCheck {
+  status: string
+  detail: string
 }
 export interface FootprintProposal {
   id: string
@@ -257,6 +265,11 @@ export interface FootprintProposal {
   pads?: FootprintPad[] // the lands as built (older proposals have none)
   // KiCad loaded the file and its pads were compared with the table (older proposals: none)
   kicad_check?: { status: 'match' | 'mismatch' | 'unavailable'; detail: string }
+  // pads against the symbol's pins: match, extra (pads the symbol lacks) or mismatch (pins with no pad)
+  symbol_check?: Partial<FootprintCheck>
+  risks?: string[] // board cutouts and keepouts: this footprint changes the board
+  drawn?: { layer: string; type: string; detail: string }[] // marks the model asked for
+  fixes?: string[] // repairs the builder made to them
   warnings: string[]
   stock: string[] // matching footprints already in KiCad's library
   status: 'pending' | 'accepted' | 'rejected'

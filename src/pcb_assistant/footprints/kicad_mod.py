@@ -101,6 +101,17 @@ class Text:
 
 
 @dataclass
+class Zone:
+    """A keepout rule area: what may not be routed or poured inside the polygon."""
+
+    points: list[tuple[float, float]]
+    layers: tuple[str, ...] = ("*.Cu",)
+    tracks: bool = True  # True: not allowed
+    vias: bool = True
+    pour: bool = True
+
+
+@dataclass
 class Footprint:
     name: str
     descr: str
@@ -112,6 +123,7 @@ class Footprint:
     arcs: list[Arc] = field(default_factory=list)
     circles: list[Circle] = field(default_factory=list)
     texts: list[Text] = field(default_factory=list)
+    zones: list[Zone] = field(default_factory=list)
     fixes: list[str] = field(default_factory=list)  # repairs the builder made to what was asked for
     ref_y: float = 0.0
     value_y: float = 0.0
@@ -180,5 +192,18 @@ def to_sexpr(fp: Footprint) -> str:
         elif p.shape == "roundrect":
             out.append(f"\t\t(roundrect_rratio {_num(min(0.25, 0.25 / min(p.w, p.h)))})")
         out.append("\t)")
+    for z in fp.zones:
+        def rule(banned: bool) -> str:
+            return "not_allowed" if banned else "allowed"
+
+        pts = " ".join(f"(xy {_num(x)} {_num(y)})" for x, y in z.points)
+        out += ["\t(zone", "\t\t(net 0)", '\t\t(net_name "")',
+                "\t\t(layers " + " ".join(_str(layer) for layer in z.layers) + ")",
+                "\t\t(hatch edge 0.5)", "\t\t(connect_pads", "\t\t\t(clearance 0)", "\t\t)",
+                "\t\t(min_thickness 0.25)", "\t\t(filled_areas_thickness no)",
+                "\t\t(keepout", f"\t\t\t(tracks {rule(z.tracks)})", f"\t\t\t(vias {rule(z.vias)})",
+                "\t\t\t(pads allowed)", f"\t\t\t(copperpour {rule(z.pour)})", "\t\t\t(footprints allowed)", "\t\t)",
+                "\t\t(fill", "\t\t\t(thermal_gap 0.5)", "\t\t\t(thermal_bridge_width 0.5)", "\t\t)",
+                "\t\t(polygon", f"\t\t\t(pts {pts})", "\t\t)", "\t)"]
     out += ["\t(embedded_fonts no)", ")"]
     return "\n".join(out) + "\n"

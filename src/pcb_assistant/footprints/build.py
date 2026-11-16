@@ -272,9 +272,11 @@ def build(spec, part: str) -> tuple[Footprint, list[str]]:
         corners = [pt for i, pt in enumerate(corners) if i == 0 or pt != corners[i - 1]]
         fp.lines += [Line(*corners[i], *corners[i + 1], "F.Fab", FAB_WIDTH) for i in range(len(corners) - 1)]
 
-    # courtyard: pads and body plus the excess, on the 0.01 grid
-    xs = [v for p in solid for v in (p.bbox[0], p.bbox[2])] + [bx0, bx1]
-    ys = [v for p in solid for v in (p.bbox[1], p.bbox[3])] + [by0, by1]
+    cut = graphics.cut_and_keep(spec, fp)
+
+    # courtyard: pads, body and any board cutout plus the excess, on the 0.01 grid
+    xs = [v for p in solid for v in (p.bbox[0], p.bbox[2])] + [bx0, bx1] + [x for x, _ in cut]
+    ys = [v for p in solid for v in (p.bbox[1], p.bbox[3])] + [by0, by1] + [y for _, y in cut]
     m = ipc.COURTYARD
     k0x, k0y, k1x, k1y = (_out(min(xs) - m), _out(min(ys) - m), _out(max(xs) + m), _out(max(ys) + m))
     fp.lines += _rect_lines(k0x, k0y, k1x, k1y, "F.CrtYd", CRTYD_WIDTH)

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import math
 
-from pcb_assistant.footprints.kicad_mod import FAB_WIDTH, SILK_WIDTH, Arc, Circle, Footprint, Line, Poly, Text
+from pcb_assistant.footprints.kicad_mod import FAB_WIDTH, SILK_WIDTH, Arc, Circle, Footprint, Line, Poly, Text, Zone
 from pcb_assistant.footprints.spec import Refused
 
 SILK = "F.SilkS"
@@ -223,39 +223,158 @@ def draw(spec, fp: Footprint, solid) -> None:
         raise Refused(errors)
 
 
+EDGE = "Edge.Cuts"
+EDGE_WIDTH = 0.05
+COPPER_LAYERS = {"front": ("F.Cu",), "back": ("B.Cu",), "all": ("*.Cu",)}
+
+
+def _span(points: list[Point]) -> str:
+    xs, ys = [x for x, _ in points], [y for _, y in points]
+    return f"{round(max(xs) - min(xs), 3)} x {round(max(ys) - min(ys), 3)} mm"
+
+
+def cut_and_keep(spec, fp: Footprint) -> list[Point]:
+    """Board cutouts and keepout areas, each held to its own rules; returns the
+    cutouts' points for the courtyard to take in. Raises Refused.
+
+    A wrong cutout is milled through the board, so nothing is repaired here:
+    every doubt goes back to the model."""
+    errors: list[str] = []
+    copper = [p for p in fp.pads if p.number]
+    reach: list[Point] = []
+    for i, c in enumerate(spec.cutouts, 1):
+        what = f"cutout {i}"
+        pts = [(float(x), float(y)) for x, y in c.points]
+        if not c.source.strip():
+            errors.append(f"{what}: say where it is dimensioned (source); a cutout is never drawn from memory")
+        if c.closed and (len(pts) < 3 or abs(area(pts)) < 1e-6):
+            errors.append(f"{what}: a closed cutout needs three points that enclose an area")
+            continue
+        if not c.closed and len(pts) < 2:
+            errors.append(f"{what}: a notch needs at least two points")
+            continue
+        edges = list(zip(pts, pts[1:] + pts[:1])) if c.closed else list(zip(pts, pts[1:]))
+        hit = next((p for p in copper if (c.closed and covers(pts, p.bbox))
+                    or any(_inside(a, b, p.bbox) for a, b in edges)), None)
+        if hit:
+            errors.append(f"{what} cuts through pad {hit.number}; check its position against the land pattern")
+            continue
+        fp.lines += [Line(round(a[0], 4), round(a[1], 4), round(b[0], 4), round(b[1], 4), EDGE, EDGE_WIDTH)
+                     for a, b in edges]
+        reach += pts
+    for i, k in enumerate(spec.keepouts, 1):
+        what = f"keepout {i}"
+        pts = [(float(x), float(y)) for x, y in k.points]
+        if not k.source.strip():
+            errors.append(f"{what}: say where it is asked for (source)")
+        if len(pts) < 3 or abs(area(pts)) < 1e-6:
+            errors.append(f"{what}: needs three points that enclose an area")
+            continue
+        if not (k.tracks or k.vias or k.copper_pour):
+            errors.append(f"{what}: keeps nothing out; ban tracks, vias or copper_pour")
+            continue
+        if k.tracks:  # a pad nothing may be routed to is a part that can't be connected
+            hit = next((p for p in copper if covers(pts, p.bbox)
+                        and (p.kind != "smd" or k.layers in ("front", "all"))), None)
+            if hit:
+                errors.append(f"{what} covers pad {hit.number}, which no track could then reach; "
+                              f"draw it clear of the pads")
+                continue
+        fp.zones.append(Zone([(round(x, 4), round(y, 4)) for x, y in pts], COPPER_LAYERS[k.layers],
+                             k.tracks, k.vias, k.copper_pour))
+    if errors:
+        raise Refused(errors)
+    return reach
+
+
+def risks(spec) -> list[str]:
+    """What the engineer must see before accepting: this footprint changes the
+    board itself, or constrains its layout."""
+    out = []
+    for c in spec.cutouts:
+        kind = "a hole" if c.closed else "an open notch (its ends must meet your board outline)"
+        out.append(f"Cuts the board: {kind}, {_span(c.points)}. From: {c.source}")
+    for k in spec.keepouts:
+        banned = ", ".join(n for n, on in (("tracks", k.tracks), ("vias", k.vias), ("copper pour", k.copper_pour)) if on)
+        side = {"front": "front copper", "back": "back copper", "all": "all copper layers"}[k.layers]
+        out.append(f"Keepout: no {banned} on {side}, {_span(k.points)}. From: {k.source}")
+    return out
+
+
+def drawn(spec) -> list[dict[str, str]]:
+    """The marks the model asked for, for the card to list."""
+    out = []
+    for g in spec.graphics:
+        if g.type == "line":
+            detail = f"{_where(g.start)} to {_where(g.end)}"
+        elif g.type == "arc":
+            detail = f"{_where(g.start)} to {_where(g.end)} through {_where(g.mid)}"
+        elif g.type == "circle":
+            detail = f"radius {g.radius} at {_where(g.center)}" + (", filled" if g.fill else "")
+        elif g.type == "polygon":
+            detail = f"{len(g.points)} points" + (", filled" if g.fill else "")
+        else:
+            detail = f"'{g.text}' at {_where(g.at)}, {g.size} mm"
+        out.append({"layer": g.layer, "type": g.type, "detail": detail})
+    if spec.labels:
+        out += [{"layer": SILK, "type": "label", "detail": f"pad {n}: '{t}'"}
+                for n, t in {**spec.labels.auto, **spec.labels.text}.items()]
+    return out
+
+
 def label(spec, fp: Footprint, solid, body: Box) -> None:
-    """Text beside pads, clear of copper: outside the part by default. Raises Refused."""
+    """Text beside pads, clear of copper: outside the part by default.
+
+    A label asked for by hand (labels.text) that doesn't fit is refused. One
+    filled in from the symbol (labels.auto) is left out and noted: asking for
+    every pin's name shouldn't fail on the one pad in the middle. Raises Refused."""
     lab = spec.labels
-    if lab is None or not lab.text:
+    if lab is None or not (lab.text or lab.auto):
         return
+    wanted = {**lab.auto, **lab.text}
     numbered = {}
     for p in fp.pads:
         if p.number:
             numbered.setdefault(p.number, p)  # shared numbers (shield tabs): the first one carries the label
     errors = [f"labels: no pad {n}" for n in lab.text if n not in numbered]
+
+    def skip(number: str, why: str, fix: str) -> None:
+        if number in lab.text:
+            errors.append(f"labels: {why}; {fix}")
+        else:
+            fp.fixes.append(f"label '{wanted[number]}' left out: {why}")
+
     edge = SILK_PAD_CLEARANCE + SILK_WIDTH + 0.1
     boxes = keepouts(solid, 0)
     sides: dict[str, list] = {}
-    for n in lab.text:
-        if n in numbered:
-            p = numbered[n]
-            # the body edge the pad sits at (or past): a row along the bottom edge is labelled below
-            out = min((p.x - body[0], "left"), (body[2] - p.x, "right"), (p.y - body[1], "up"),
-                      (body[3] - p.y, "down"))[1]
-            if lab.side == "inside":
-                out = {"right": "left", "left": "right", "down": "up", "up": "down"}[out]
-            sides.setdefault(out, []).append(p)
+    for n in wanted:
+        if n not in numbered:
+            continue
+        p = numbered[n]
+        # the body edge the pad sits at (or past): a row along the bottom edge is labelled below
+        gap, out = min((p.x - body[0], "left"), (body[2] - p.x, "right"), (p.y - body[1], "up"),
+                       (body[3] - p.y, "down"))
+        if gap > max(p.w, p.h):
+            skip(n, f"pad {n} isn't at the body's edge", "place its label yourself as a text graphic")
+            continue
+        if lab.side == "inside":
+            out = {"right": "left", "left": "right", "down": "up", "up": "down"}[out]
+        sides.setdefault(out, []).append(p)
     for side, pads in sides.items():
         across = (lambda p: p.y) if side in ("left", "right") else (lambda p: p.x)
         spots = sorted(across(p) for p in pads)
         pitch = min((b - a for a, b in zip(spots, spots[1:])), default=None)
         size = lab.size or min(MAX_LABEL, round(pitch - 0.2, 2) if pitch is not None else MAX_LABEL)
         if size < MIN_SILK_TEXT or (pitch is not None and size > pitch - 0.1):
-            errors.append(f"labels: pads {pitch and round(pitch, 3)} mm apart leave no room for "
-                          f"{MIN_SILK_TEXT} mm text; label fewer pads or none")
+            why = (f"pads {pitch and round(pitch, 3)} mm apart leave no room for "
+                   f"{MIN_SILK_TEXT} mm text")
+            if any(p.number in lab.text for p in pads):
+                errors.append(f"labels: {why}; label fewer pads or none")
+            else:
+                fp.fixes.append(f"{len(pads)} labels on the {side} side left out: {why}")
             continue
         for p in pads:
-            text = lab.text[p.number]
+            text = wanted[p.number]
             half = max(1, len(text)) * size * CHAR_ASPECT / 2
             x0, y0, x1, y1 = p.bbox
             outside = lab.side == "outside"
@@ -269,8 +388,8 @@ def label(spec, fp: Footprint, solid, body: Box) -> None:
                 at = (p.x, max(y1, body[3] if outside else y1) + edge + half)
             rotation = 0 if side in ("left", "right") else 90
             if _hits(text_box(at[0], at[1], text, size, rotation), boxes):
-                errors.append(f"labels: no clear spot for '{text}' beside pad {p.number}; "
-                              f"place it yourself as a text graphic")
+                skip(p.number, f"no clear spot for '{text}' beside pad {p.number}",
+                     "place it yourself as a text graphic")
                 continue
             fp.texts.append(Text(text, round(at[0], 4), round(at[1], 4), rotation, SILK, size))
     if errors:

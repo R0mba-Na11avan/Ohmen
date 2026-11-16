@@ -37,6 +37,9 @@ class FootprintProposal(BaseModel):
     # the lands and bare holes as built: {number, x, y, w, h, drill, drill_h, rotation, hole, name}
     pads: list[dict[str, Any]] = Field(default_factory=list)
     symbol_check: dict[str, Any] = Field(default_factory=dict)  # {status, detail}: pads against the symbol's pins
+    risks: list[str] = Field(default_factory=list)  # board cutouts and keepouts: shown first on the card
+    drawn: list[dict[str, Any]] = Field(default_factory=list)  # {layer, type, detail}: marks the model asked for
+    fixes: list[str] = Field(default_factory=list)  # repairs the builder made to them
     warnings: list[str] = Field(default_factory=list)
     stock: list[str] = Field(default_factory=list)
     kicad_mod: str
@@ -102,16 +105,20 @@ def pad_table(fp, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
     """The footprint's lands and bare holes, as the card lists them and as
     KiCad's read-back is compared against."""
     names = names or {}
+
+    def order(p) -> tuple:  # by pad number as a person counts (2 before 10), bare holes last
+        return (not p.number, [(0, int(t), "") if t.isdigit() else (1, 0, t) for t in re.split(r"(\d+)", p.number) if t])
+
     return [{"number": p.number, "x": p.x, "y": p.y, "w": p.w, "h": p.h, "drill": p.drill,
              "drill_h": p.drill_h, "rotation": p.rotation, "hole": not p.number,
              "name": names.get(p.number, "")}
-            for p in fp.pads if p.solid]
+            for p in sorted((p for p in fp.pads if p.solid), key=order)]
 
 
 def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnings: list[str],
             stock: list[str], symbol=None) -> FootprintProposal:
     """`symbol` is symbols.find's (what, pins) for the spec's symbol, if it names one."""
-    from pcb_assistant.footprints import symbols
+    from pcb_assistant.footprints import graphics, symbols
     from pcb_assistant.footprints.spec import dims
     from pcb_assistant.footprints.svg import drawing
 
@@ -127,7 +134,8 @@ def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnin
         id=uuid.uuid4().hex[:10], part=part, name=fp.name, family=spec.family, package=spec.package,
         drawing=spec.drawing, spec=data, dims=rows, pads=pads, warnings=warnings, stock=stock,
         kicad_mod=kicad_mod, kicad_svg=kicad_svg, drawing_svg=drawing(fp),
-        kicad_check=kicad_check(kicad_mod, fp.name, pads), symbol_check=symbol_check, created_at=time.time(),
+        kicad_check=kicad_check(kicad_mod, fp.name, pads), symbol_check=symbol_check,
+        risks=graphics.risks(spec), drawn=graphics.drawn(spec), fixes=list(fp.fixes), created_at=time.time(),
     ))
 
 
@@ -156,7 +164,7 @@ def ensure_library(project: Path) -> bool:
 # The Reference and Value fields: a long part name is many times wider than a
 # small part and would shrink the drawing to a speck, so the preview leaves them out.
 _FIELD_TEXT = re.compile(r'^\t\(property "(?:Reference|Value)" .*?^\t\)\n', re.M | re.S)
-_PREVIEW_LAYERS = "F.Cu,F.Paste,F.SilkS,F.Fab,F.CrtYd"
+_PREVIEW_LAYERS = "F.Cu,F.Paste,F.SilkS,F.Fab,F.CrtYd,Edge.Cuts,Cmts.User"
 TOL = 0.001  # mm: KiCad keeps nanometres, the file has four decimals
 
 
@@ -277,7 +285,22 @@ def kicad_check(kicad_mod: str, name: str, pads: list[dict[str, Any]]) -> dict[s
                 break
         if off:
             problems.append(f"{label(mine)}: {', '.join(off)} differ")
+    # what changes the board itself must survive the round trip too
+    ours, theirs_ = _board_marks(kicad_mod), _board_marks(saved)
+    for what, i in (("board cutout line", 0), ("keepout area", 1)):
+        if ours[i] != theirs_[i]:
+            problems.append(f"KiCad read {theirs_[i]} {what}s, the file has {ours[i]}")
     if problems:
         return {"status": "mismatch", "detail": "; ".join(problems[:6])}
     n = len(found)
-    return {"status": "match", "detail": f"KiCad read {n} pad{'s' if n != 1 else ''}, all match the table."}
+    extra = "".join(f", {count} {what}{'s' if count != 1 else ''}"
+                    for count, what in ((ours[0], "board cutout line"), (ours[1], "keepout area")) if count)
+    return {"status": "match", "detail": f"KiCad read {n} pad{'s' if n != 1 else ''}{extra}, all match the table."}
+
+
+def _board_marks(text: str) -> tuple[int, int]:
+    """(lines on Edge.Cuts, keepout zones) in a footprint file."""
+    (fp,) = _sexpr(text)
+    nodes = [n for n in fp if isinstance(n, list) and n]
+    cuts = sum(1 for n in nodes if n[0] == "fp_line" and ["layer", "Edge.Cuts"] in n)
+    return cuts, sum(1 for n in nodes if n[0] == "zone")
