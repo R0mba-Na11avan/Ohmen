@@ -33,6 +33,13 @@ ADD_DIR = "/add-dir"
 
 # chat id -> tools the user allowed for the rest of that chat (until the app restarts)
 _always_allowed: dict[str, set[str]] = {}
+# chat id -> footprint files the last turn wrote around create_footprint; the next turn is told
+_stray_footprints: dict[str, list[str]] = {}
+STRAY_NOTICE = ("Written outside the footprint tool, so nothing checked {it}: {files}. No spec checks, "
+                "no KiCad read-back, no approval card. Treat {it} as unverified.")
+STRAY_NOTE = ("\n\n[Ohmen: during your last turn these footprint files were written or changed outside "
+              "create_footprint, so nothing checked them: {files}. If that was you, rebuild each with "
+              "create_footprint and tell the engineer the hand-written file is unverified.]")
 
 
 def prompt_label(payload: dict[str, Any]) -> str:
@@ -188,12 +195,18 @@ async def run_engine_stream(
         {"ask": ask, "project_dir": project, "add_dirs": chats.added_dirs(sid) if chats and sid else []}
         if config.engine_of(model_spec) == "claude" else {}
     )
+    # Claude Code can have a shell: note the footprint files now, to see afterwards what the turn wrote.
+    from pcb_assistant.footprints import proposals as footprint_proposals
+
+    footprints_before = footprint_proposals.footprint_files(project) if interactive and project else None
+    stray = _stray_footprints.pop(sid, None) if sid else None
+    told = message + STRAY_NOTE.format(files=", ".join(stray)) if stray else message  # after it: a /command stays first
     slash = message.lstrip().startswith("/")  # a skill or command: the CLI only sees it at the very start
 
     def work(session: str | None):
         # a fresh session starts from the chat's summary when it has one
         opening = "" if session else (condense_seed(condensed, transcript) if condensed else seed_transcript(transcript))
-        prompt, sys_text = (message, system + "\n\n" + opening) if slash and opening else (opening + message, system)
+        prompt, sys_text = (told, system + "\n\n" + opening) if slash and opening else (opening + told, system)
         return dispatch.run(
             model_spec, sys_text, prompt, toolset=toolset,
             on_event=lambda e: put("event", e), on_tool=lambda e: put("event", e),
@@ -292,6 +305,12 @@ async def run_engine_stream(
             utilization=(result.rate_limit or {}).get("utilization"),
         )
         yield {"type": "usage", **usage}
+        written = footprint_proposals.unchecked(project, footprints_before) if footprints_before is not None else []
+        if written:
+            yield {"type": "notice", "text": STRAY_NOTICE.format(
+                files=", ".join(written), it="it" if len(written) == 1 else "them")}
+            if sid:
+                _stray_footprints[sid] = written
         if chats and sid:
             chats.set_engine_session(sid, {"provider": provider, "model": model, "id": result.session_id})
             record({"route": "subscription", "usage": usage},

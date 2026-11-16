@@ -27,7 +27,10 @@ All notable changes are listed here. The format follows
 - Footprints always go through the footprint tool. Asking for one proposes it
   straight away (the approval card is still the gate), and a match in KiCad's
   library is named instead of generating a duplicate. Claude Code with all
-  tools on can no longer write a `.kicad_mod` file by hand.
+  tools on can no longer write a `.kicad_mod` file by hand, even with a tool
+  your own Claude Code settings always allow. If a shell command writes one
+  anyway, the chat says which file went unchecked and the copilot is told to
+  rebuild it.
 - The copilot can read back a footprint Ohmen made and propose a changed one.
 
 ## [0.1.2] - 2026-11-11
