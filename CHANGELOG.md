@@ -32,6 +32,9 @@ All notable changes are listed here. The format follows
   during a reply in which the copilot ran a shell command, the chat names it
   and the copilot is told to rebuild it if it wrote it.
 - The copilot can read back a footprint Ohmen made and propose a changed one.
+- The chat folds the copilot's tool calls behind a "steps" line once its answer
+  starts. Calls still show as they happen, and reviews, footprints, diagram
+  and BOM changes keep a line of their own.
 
 ## [0.1.2] - 2026-11-11
 

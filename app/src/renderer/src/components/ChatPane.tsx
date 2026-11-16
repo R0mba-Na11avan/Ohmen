@@ -35,17 +35,14 @@ import { LogoMark } from './marks'
 import { ModelPicker } from './ModelPicker'
 import { PromptCard } from './PromptCard'
 import { ReviewTeam, applyProgress, compact, usageLine } from './ReviewTeam'
+import { ToolTrace, type ToolEvent } from './ToolTrace'
 
-interface ToolEvent {
-  kind: 'call' | 'result'
-  name: string
-  info: string
-}
 interface Turn {
   q: string
   a: string
   thinking?: string
   tools: ToolEvent[]
+  folded?: number // tool events already behind the steps bar: all that came before the latest answer text (live only)
   team?: ReviewerRow[] // reviewers of a design review, live then persisted
   images?: ChatImage[]
   error?: string | null
@@ -747,7 +744,7 @@ export function ChatPane({
     await streamChat(q, images, model, activeId, {
       onSession: (id) => setActiveId(id),
       onThinking: (text) => patchLast((t) => ({ ...t, thinking: (t.thinking ?? '') + text })),
-      onToken: (text) => patchLast((t) => ({ ...t, a: t.a + text })),
+      onToken: (text) => patchLast((t) => ({ ...t, a: t.a + text, folded: t.tools.length })),
       onTool: (kind, name, info) => patchLast((t) => ({ ...t, tools: [...t.tools, { kind, name, info }] })),
       onReviewProgress: (ev) => patchLast((t) => ({ ...t, team: applyProgress(t.team ?? [], ev) })),
       onBom: () => onBomChanged(),
@@ -955,18 +952,8 @@ export function ChatPane({
                   <ThinkingBlock text={t.thinking} live={live(i) && !t.a} />
                 )}
 
-                {/* agent tool trace — purple console lines */}
-                {t.tools.length > 0 && (
-                  <div style={{ marginTop: 8, fontFamily: type.mono, fontSize: type.size.xs }}>
-                    {t.tools.map((tv, j) => (
-                      <div key={j} style={{ color: tv.kind === 'call' ? color.agent : color.inkSecondary }}>
-                        {tv.kind === 'call' ? '▸ ' : '  ✓ '}
-                        {tv.name}
-                        {tv.kind === 'result' && tv.info ? ` — ${tv.info.split('\n')[0].slice(0, 60)}` : ''}
-                      </div>
-                    ))}
-                  </div>
-                )}
+                {/* agent tool trace — shown as it happens, folded behind a bar once the answer starts */}
+                <ToolTrace tools={t.tools} folded={live(i) ? (t.folded ?? 0) : t.tools.length} />
 
                 {/* Claude Code asking: tool permission, or a question to answer */}
                 {t.prompts?.map((p) => (
