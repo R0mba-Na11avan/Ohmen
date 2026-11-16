@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from html import escape
 
-from pcb_assistant.footprints.kicad_mod import Footprint, _num
+from pcb_assistant.footprints.kicad_mod import NPTH, Footprint, _num
 
 COPPER = "#D68A4C"
 PASTE = "#EEA766"
@@ -33,10 +33,19 @@ def _pad(p, fill: str, opacity: float = 1.0) -> str:
         r = min(0.25, 0.25 * min(p.w, p.h))
     else:
         r = 0
-    out = (f'<rect x="{_num(x)}" y="{_num(y)}" width="{_num(p.w)}" height="{_num(p.h)}" rx="{_num(r)}" '
-           f'fill="{fill}" fill-opacity="{opacity}"/>')
-    if p.drill:
-        out += f'<circle cx="{_num(p.x)}" cy="{_num(p.y)}" r="{_num(p.drill / 2)}" fill="{HOLE}"/>'
+    if p.kind == NPTH:  # a bare hole: a ring where copper must stay away, no land
+        out = (f'<rect x="{_num(x)}" y="{_num(y)}" width="{_num(p.w)}" height="{_num(p.h)}" rx="{_num(r)}" '
+               f'fill="{HOLE}" stroke="{FAB}" stroke-width="0.06"/>')
+    else:
+        out = (f'<rect x="{_num(x)}" y="{_num(y)}" width="{_num(p.w)}" height="{_num(p.h)}" rx="{_num(r)}" '
+               f'fill="{fill}" fill-opacity="{opacity}"/>')
+        if p.drill and p.drill_h:  # a slot
+            out += (f'<rect x="{_num(p.x - p.drill / 2)}" y="{_num(p.y - p.drill_h / 2)}" width="{_num(p.drill)}" '
+                    f'height="{_num(p.drill_h)}" rx="{_num(min(p.drill, p.drill_h) / 2)}" fill="{HOLE}"/>')
+        elif p.drill:
+            out += f'<circle cx="{_num(p.x)}" cy="{_num(p.y)}" r="{_num(p.drill / 2)}" fill="{HOLE}"/>'
+    if p.rotation:  # KiCad turns counter-clockwise on a y-down sheet; SVG turns clockwise
+        out = f'<g transform="rotate({_num(-p.rotation)} {_num(p.x)} {_num(p.y)})">{out}</g>'
     return out
 
 
@@ -56,8 +65,8 @@ def drawing(fp: Footprint) -> str:
     w, h = max(x for x, _ in pts) + MARGIN - x0, max(y for _, y in pts) + MARGIN - y0
     body = [_line(ln, FAB) for ln in fp.lines if ln.layer == "F.Fab"]
     body += [_line(ln, COURTYARD, "0.15 0.12") for ln in crt]
-    body += [_pad(p, COPPER) for p in fp.pads if p.number]
-    body += [_pad(p, PASTE, 0.55) for p in fp.pads if not p.number]  # paste windows on a thermal pad
+    body += [_pad(p, COPPER) for p in fp.pads if p.solid]
+    body += [_pad(p, PASTE, 0.55) for p in fp.pads if not p.solid]  # paste windows on a thermal pad
     body += [_line(ln, SILK) for ln in fp.lines if ln.layer == "F.SilkS"]
     body += [f'<polygon points="{" ".join(f"{_num(x)},{_num(y)}" for x, y in pg.points)}" fill="{SILK}"/>'
              for pg in fp.polys if pg.layer == "F.SilkS"]

@@ -708,6 +708,23 @@ def build_toolset(
                 f"to replace it.\nspec: {json.dumps({**p.spec, 'name': p.name})}")
 
     @toolset.tool_plain
+    def get_symbol_pins(symbol: str = "") -> str:
+        """A symbol's pins (number, name, type), to number a footprint's pads after
+        it: a refdes on the schematic ('U3') or a symbol in the project's libraries
+        ('MyLib:ESP32-MOD' or just the name). With no argument: lists the symbols."""
+        from pcb_assistant.footprints import symbols
+
+        found = symbols.find(project_dir, design, symbol) if symbol.strip() else None
+        if found:
+            return f"{found[0]}: {len(found[1])} pins\nnumber\tname\ttype\n{symbols.table(found[1])}"
+        names = sorted(symbols.library(project_dir)) if project_dir is not None else []
+        listed = ", ".join(names[:60]) + (" …" if len(names) > 60 else "")
+        head = f"No symbol '{symbol}'. " if symbol.strip() else ""
+        return head + (f"Symbols in the project: {listed}. A placed part is asked for by its refdes."
+                       if names else "The project has no symbols of its own; a placed part is asked for by "
+                                     "its refdes.")
+
+    @toolset.tool_plain
     def create_footprint(part: str, spec: dict, propose: bool = False, despite_stock: bool = False) -> str:
         """The only way to make a KiCad footprint (.kicad_mod): never write the file
         yourself. Checks a package spec and, with propose=True, builds the footprint
@@ -721,7 +738,7 @@ def build_toolset(
         """
         from pydantic import TypeAdapter, ValidationError
 
-        from pcb_assistant.footprints import proposals, stock
+        from pcb_assistant.footprints import proposals, stock, symbols
         from pcb_assistant.footprints.build import build
         from pcb_assistant.footprints.kicad_mod import to_sexpr
         from pcb_assistant.footprints.spec import FootprintSpec, check
@@ -734,30 +751,39 @@ def build_toolset(
         errors, warnings = check(spec)
         if errors:
             return "The spec doesn't describe a real package — re-read the drawing:\n- " + "\n- ".join(errors)
+        symbol = None
+        if spec.symbol.strip():
+            symbol = symbols.find(project_dir, design, spec.symbol)
+            if symbol is None:
+                return (f"No symbol '{spec.symbol}' on the schematic or in the project's libraries. "
+                        f"get_symbol_pins lists what there is; or leave \"symbol\" out.")
         try:
             found = stock.matches(spec)
         except Exception:  # no KiCad install to look in
             found = []
+        fp, built = build(spec, part)
+        pins = symbols.cross_check([p.number for p in fp.pads if p.number], symbol) if symbol else None
+        versus = f"\nAgainst the symbol ({pins['status']}): {pins['detail']}" if pins else ""
+        warnings = warnings + built
         notes = "".join(f"\n- {w}" for w in warnings)
         if not propose:
             have = (f"KiCad's library already has: {', '.join(found)}." if found
                     else "No matching footprint in KiCad's library.")
             return (f"Spec checks out. {have} Ask the engineer whether they want a footprint generated "
                     f"from the datasheet; call again with propose=True only if they say yes."
-                    + (f"\nWorth a second look:{notes}" if notes else ""))
+                    + versus + (f"\nWorth a second look:{notes}" if notes else ""))
         if found and not despite_stock:
             return (f"Nothing proposed: KiCad's library already has {', '.join(found)}. Give the engineer "
                     f"that name to assign on the symbol. Call again with despite_stock=True only if they "
                     f"still want one generated from the datasheet.")
         if project_dir is None:
             return "No project is open."
-        fp, built = build(spec, part)
-        p = proposals.propose(project_dir, part, spec, fp, to_sexpr(fp), warnings + built, found)
+        p = proposals.propose(project_dir, part, spec, fp, to_sexpr(fp), warnings, found, symbol)
         extra = "".join(f"\n- {w}" for w in p.warnings)
         return (f"Footprint proposal [{p.id}] {p.name}: waiting for the engineer to accept it in the card "
                 f"below; nothing is written until then. On accept it goes to {proposals.LIB_DIR} as "
                 f"'{proposals.LIB_NAME}:{p.name}' for them to assign on the symbol."
-                + (f"\nWarnings shown on the card:{extra}" if extra else "")
+                + (f"\nWarnings shown on the card:{extra}" if extra else "") + versus
                 + f"\nKiCad read-back ({p.kicad_check.get('status')}): {p.kicad_check.get('detail')}")
 
     @toolset.tool_plain
