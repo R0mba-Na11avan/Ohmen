@@ -33,13 +33,16 @@ ADD_DIR = "/add-dir"
 
 # chat id -> tools the user allowed for the rest of that chat (until the app restarts)
 _always_allowed: dict[str, set[str]] = {}
-# chat id -> footprint files the last turn wrote around create_footprint; the next turn is told
+# chat id -> footprint files that changed in a turn where the model had a shell; the next turn is told
 _stray_footprints: dict[str, list[str]] = {}
-STRAY_NOTICE = ("Written outside the footprint tool, so nothing checked {it}: {files}. No spec checks, "
-                "no KiCad read-back, no approval card. Treat {it} as unverified.")
-STRAY_NOTE = ("\n\n[Ohmen: during your last turn these footprint files were written or changed outside "
-              "create_footprint, so nothing checked them: {files}. If that was you, rebuild each with "
-              "create_footprint and tell the engineer the hand-written file is unverified.]")
+# Claude Code tools that can write a file unseen: a shell, or a subagent (its calls aren't reported)
+_CAN_WRITE = {"Bash", "PowerShell", "Task", "Agent"}
+STRAY_NOTICE = ("Changed during this reply, and not through the footprint tool: {files}. If the copilot wrote "
+                "{it}, nothing checked {it} (no spec checks, no KiCad read-back, no approval card).")
+STRAY_NOTE = ("\n\n[Ohmen: these footprint files changed during your last turn, and not through "
+              "create_footprint: {files}. If you wrote one as a footprint, nothing checked it: rebuild it with "
+              "create_footprint and tell the engineer. If you only unpacked or copied what the engineer asked "
+              "for, or it wasn't you, carry on.]")
 
 
 def prompt_label(payload: dict[str, Any]) -> str:
@@ -195,7 +198,7 @@ async def run_engine_stream(
         {"ask": ask, "project_dir": project, "add_dirs": chats.added_dirs(sid) if chats and sid else []}
         if config.engine_of(model_spec) == "claude" else {}
     )
-    # Claude Code can have a shell: note the footprint files now, to see afterwards what the turn wrote.
+    # Claude Code can have a shell: note the footprint files now, to see afterwards what a turn that used one wrote.
     from pcb_assistant.footprints import proposals as footprint_proposals
 
     footprints_before = footprint_proposals.footprint_files(project) if interactive and project else None
@@ -240,6 +243,7 @@ async def run_engine_stream(
     team: dict[str, dict[str, Any]] = {}
     result = None
     failure: Exception | None = None
+    could_write = False  # the turn ran a shell or a subagent
 
     if sid:
         yield {"type": "session", "chat_id": sid}
@@ -265,6 +269,7 @@ async def run_engine_stream(
             elif ev["type"] == "tool_call":
                 args = ev.get("args")
                 tools.append({"kind": "call", "name": ev["name"], "info": ""})
+                could_write = could_write or ev["name"].split(":")[0] in _CAN_WRITE
                 yield {"type": "tool_call", "name": ev["name"], "args": args if isinstance(args, (dict, str)) else str(args)}
             elif ev["type"] == "tool_result":
                 tools.append({"kind": "result", "name": ev["name"], "info": ev["summary"]})
@@ -305,7 +310,8 @@ async def run_engine_stream(
             utilization=(result.rate_limit or {}).get("utilization"),
         )
         yield {"type": "usage", **usage}
-        written = footprint_proposals.unchecked(project, footprints_before) if footprints_before is not None else []
+        written = (footprint_proposals.unchecked(project, footprints_before)
+                   if could_write and footprints_before is not None else [])
         if written:
             yield {"type": "notice", "text": STRAY_NOTICE.format(
                 files=", ".join(written), it="it" if len(written) == 1 else "them")}
