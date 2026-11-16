@@ -49,6 +49,9 @@ class _Base(BaseModel):
     package: str = Field(description="the datasheet's package name, e.g. 'SOT-23-5 (DBV)'")
     drawing: str = Field("", description="which drawing/variant was used, e.g. 'DBV0005A, p.31'")
     name: str = Field("", description="footprint name; leave empty for a generated one")
+    symbol: str = Field("", description="the symbol this footprint is for: a refdes on the schematic "
+                                        "('U3') or a library symbol ('MyLib:ESP32-MOD'); pads are "
+                                        "checked against its pins")
 
 
 class DualGullwing(_Base):
@@ -135,27 +138,103 @@ class PinHeader(_Base):
     lead_diameter: Dim = Field(description="round lead diameter, or a square lead's diagonal")
 
 
-class CustomPad(BaseModel):
+Drill = Union[float, tuple[float, float]]  # round, or a slot (width, height) in the pad's own frame
+Corner = Literal["top_left", "top_right", "bottom_left", "bottom_right"]
+_STEP = {"right": (1, 0), "left": (-1, 0), "down": (0, 1), "up": (0, -1)}
+
+
+class _Land(BaseModel):
+    width: float
+    height: float
+    shape: Literal["roundrect", "rect", "circle", "oval", "chamfered_rect"] = "roundrect"
+    drill: Drill | None = Field(None, description="hole for a through-hole pad: a diameter, or "
+                                                  "[width, height] for a slot")
+    rotation: float = Field(0.0, description="degrees, counter-clockwise; width/height/slot are the "
+                                             "unrotated pad's")
+    paste: bool = Field(True, description="solder paste on an SMD pad (off for a shield or test pad)")
+    mask: bool = Field(True, description="solder mask opening")
+    chamfer: list[Corner] = Field(default_factory=list, description="cut corners of a chamfered_rect")
+    chamfer_ratio: float = 0.2
+
+
+class CustomPad(_Land):
     number: str
     x: float
     y: float
-    width: float
-    height: float
-    shape: Literal["roundrect", "rect", "circle", "oval"] = "roundrect"
-    drill: float | None = Field(None, description="hole diameter for a through-hole pad")
+
+
+class PadRow(_Land):
+    """A straight run of identical pads: the first pad's centre, then count
+    pads a pitch apart in a direction."""
+
+    x: float
+    y: float
+    count: int = Field(0, description="pads in the row; taken from numbers when those are given")
+    pitch: float
+    direction: Literal["right", "left", "down", "up"] = Field(description="from the first pad (+y is down)")
+    numbers: list[str] = Field(default_factory=list, description="each pad's number in order, e.g. to "
+                                                                 "follow a symbol; else start and step")
+    start: int = 1
+    step: int = 1
+
+    @property
+    def n(self) -> int:
+        return len(self.numbers) or self.count
+
+    def pads(self) -> list[CustomPad]:
+        dx, dy = _STEP[self.direction]
+        land = {k: getattr(self, k) for k in _Land.model_fields}
+        return [CustomPad(number=self.numbers[i] if self.numbers else str(self.start + i * self.step),
+                          x=round(self.x + dx * i * self.pitch, 4), y=round(self.y + dy * i * self.pitch, 4),
+                          **land) for i in range(self.n)]
+
+
+class Hole(BaseModel):
+    """A non-plated hole: a locating peg or a mounting hole."""
+
+    x: float
+    y: float
+    drill: Drill
 
 
 class Custom(_Base):
-    """Anything else: the land pattern itself, read off the datasheet's
-    recommended land pattern drawing (pad centres in mm, +y down, origin at the
-    package centre)."""
+    """Anything else (connectors, modules): the land pattern itself, read off
+    the datasheet's recommended land pattern drawing (pad centres in mm, +y
+    down, origin at the package centre)."""
 
     family: Literal["custom"]
-    pads: list[CustomPad]
+    pads: list[CustomPad] = Field(default_factory=list)
+    rows: list[PadRow] = Field(default_factory=list)
+    holes: list[Hole] = Field(default_factory=list)
     body_x: float
     body_y: float
-    source: str = Field(description="the recommended land pattern's page")
+    body_offset: tuple[float, float] = Field((0.0, 0.0), description="the body's centre, when it isn't "
+                                                                     "the origin")
+    source: str = Field(description="where the land pattern is from: its datasheet page, an attached "
+                                    "drawing, or the engineer")
     polarized: bool | None = Field(None, description="mark pin 1; default: when there are more than two pads")
+
+    def all_pads(self) -> list[CustomPad]:
+        return [*self.pads, *(p for row in self.rows for p in row.pads())]
+
+
+def drill_size(drill: Drill | None) -> tuple[float, float] | None:
+    """A drill as (width, height); equal for a round hole."""
+    if drill is None:
+        return None
+    return (drill, drill) if isinstance(drill, (int, float)) else (drill[0], drill[1])
+
+
+def _box(x: float, y: float, w: float, h: float, rotation: float = 0.0):
+    if rotation % 180:
+        a = math.radians(rotation)
+        c, s = abs(math.cos(a)), abs(math.sin(a))
+        w, h = w * c + h * s, w * s + h * c
+    return (x - w / 2, y - h / 2, x + w / 2, y + h / 2)
+
+
+def _overlap(a, b) -> bool:
+    return a[0] < b[2] - 1e-9 and b[0] < a[2] - 1e-9 and a[1] < b[3] - 1e-9 and b[1] < a[3] - 1e-9
 
 
 FootprintSpec = Annotated[
@@ -185,7 +264,7 @@ def lead_count(spec) -> int:
     if isinstance(spec, Chip):
         return 2
     if isinstance(spec, Custom):
-        return len(spec.pads)
+        return len(spec.all_pads())
     return spec.pins
 
 
@@ -269,19 +348,40 @@ def check(spec) -> tuple[list[str], list[str]]:
         if spec.lead_diameter.hi >= min(spec.pitch, spec.row_pitch or spec.pitch):
             errors.append("leads as thick as the pitch: check lead_diameter (a square post's diagonal)")
     elif isinstance(spec, Custom):
-        numbers = [p.number for p in spec.pads]
-        if not numbers:
+        for i, row in enumerate(spec.rows, 1):
+            if row.n < 1:
+                errors.append(f"row {i}: give count or numbers")
+            if row.numbers and row.count and row.count != len(row.numbers):
+                errors.append(f"row {i}: count is {row.count} but {len(row.numbers)} numbers are given")
+            if row.pitch <= 0:
+                errors.append(f"row {i}: pitch must be positive")
+        pads = spec.all_pads()
+        if not pads:
             errors.append("no pads")
-        for p in spec.pads:
+        for p in pads:
             if p.width <= 0 or p.height <= 0:
                 errors.append(f"pad {p.number}: size must be positive")
-            if p.drill is not None and p.drill >= min(p.width, p.height):
+            hole = drill_size(p.drill)
+            if hole and (min(hole) <= 0 or hole[0] >= p.width or hole[1] >= p.height):
                 errors.append(f"pad {p.number}: drill doesn't leave copper around the hole")
-        for i, a in enumerate(spec.pads):
-            for b in spec.pads[i + 1:]:
-                if abs(a.x - b.x) * 2 < a.width + b.width and abs(a.y - b.y) * 2 < a.height + b.height \
-                        and a.number != b.number:
-                    errors.append(f"pads {a.number} and {b.number} overlap")
+            if p.shape == "chamfered_rect" and not p.chamfer:
+                errors.append(f"pad {p.number}: a chamfered_rect says which corners in chamfer")
+            if not 0 < p.chamfer_ratio <= 0.5:
+                errors.append(f"pad {p.number}: chamfer_ratio is between 0 and 0.5")
+        square = [p for p in pads if not p.rotation % 90]  # a turned pad's box says too little
+        boxes = [_box(p.x, p.y, p.width, p.height, p.rotation) for p in square]
+        for i, a in enumerate(square):
+            for j in range(i + 1, len(square)):
+                if a.number != square[j].number and _overlap(boxes[i], boxes[j]):
+                    errors.append(f"pads {a.number} and {square[j].number} overlap")
+        for h in spec.holes:
+            size = drill_size(h.drill)
+            if min(size) <= 0:
+                errors.append(f"hole at ({h.x}, {h.y}): drill must be positive")
+                continue
+            hit = next((p for p, b in zip(square, boxes) if _overlap(_box(h.x, h.y, *size), b)), None)
+            if hit:
+                errors.append(f"hole at ({h.x}, {h.y}) lands on pad {hit.number}")
     if not math.isfinite(sum(d.mid for d in dims(spec).values())):
         errors.append("a dimension isn't a number")
     return errors, warnings

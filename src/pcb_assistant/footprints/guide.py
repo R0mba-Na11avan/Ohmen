@@ -33,11 +33,28 @@ Families:
 - pin_header (through-hole): rows, pins_per_row, pitch, row_pitch, dim
   lead_diameter
 - custom (connectors, modules, anything else; from the recommended land
-  pattern): pads [{number, x, y, width, height, shape (roundrect/rect/circle/
-  oval), drill?}] with the origin at the package centre, body_x, body_y (plain
-  mm), source, polarized? (pin-1 mark; default only with more than two pads).
-  Pads may share a number: build a T- or L-shaped land from overlapping
-  rectangles with the same number.
+  pattern), origin at the package centre:
+  - pads [{number, x, y, width, height, ...land}] for single pads
+  - rows [{x, y (first pad's centre), count, pitch, direction (right/left/
+    down/up), width, height, ...land, and either numbers ["1","2",...] in
+    order or start + step}] for a straight run of identical pads. Use rows
+    for a module's or connector's pad rows: fewer numbers to get wrong.
+  - land options, on a pad or a row: shape (roundrect/rect/circle/oval/
+    chamfered_rect with chamfer ["top_left",...]), drill (a diameter, or
+    [width, height] for a slot; makes it through-hole), rotation (degrees
+    counter-clockwise; width, height and slot are the unrotated pad's),
+    paste false (a shield or test pad), mask false
+  - holes [{x, y, drill}]: non-plated locating and mounting holes
+  - body_x, body_y (plain mm), body_offset? [x, y] when the body's centre
+    isn't the origin, source, polarized? (pin-1 mark; default only with more
+    than two pads)
+  Pads may share a number (shield tabs, or a T- or L-shaped land built from
+  overlapping rectangles).
+
+Following a symbol: any spec may carry "symbol": a refdes on the schematic
+("U3") or a library symbol ("MyLib:ESP32-MOD"). get_symbol_pins gives its pins;
+number the pads after them. The pads are then checked against the pins, and the
+card shows each pad's pin name. A symbol pin with no pad is a mismatch to fix.
 
 Flow:
 - The engineer asked for the footprint: call with propose=True straight away.

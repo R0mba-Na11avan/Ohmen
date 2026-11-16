@@ -1,6 +1,7 @@
 """A footprint's pads and graphics, written as a KiCad .kicad_mod S-expression."""
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 FORMAT_VERSION = 20241229  # KiCad 9's, the oldest Ohmen supports; newer ones upgrade on save
@@ -10,6 +11,7 @@ SMD_LAYERS = ("F.Cu", "F.Mask", "F.Paste")
 SMD_NO_PASTE = ("F.Cu", "F.Mask")
 PASTE_ONLY = ("F.Paste",)
 THT_LAYERS = ("*.Cu", "*.Mask")
+NPTH = "np_thru_hole"
 
 SILK_WIDTH = 0.12
 FAB_WIDTH = 0.10
@@ -23,14 +25,29 @@ class Pad:
     y: float
     w: float
     h: float
-    shape: str = "roundrect"  # roundrect | rect | circle | oval
-    kind: str = "smd"  # smd | thru_hole
+    shape: str = "roundrect"  # roundrect | rect | circle | oval | chamfered_rect
+    kind: str = "smd"  # smd | thru_hole | np_thru_hole (a bare hole: no number)
     drill: float | None = None
     layers: tuple[str, ...] = SMD_LAYERS
+    rotation: float = 0.0  # degrees, as KiCad's (at x y angle); w and h are the unrotated pad's
+    drill_h: float | None = None  # a slot: drill is its width, this its height (unrotated)
+    chamfer: tuple[str, ...] = ()  # chamfered_rect corners: top_left, top_right, bottom_left, bottom_right
+    chamfer_ratio: float = 0.2
 
     @property
     def bbox(self) -> tuple[float, float, float, float]:
-        return (self.x - self.w / 2, self.y - self.h / 2, self.x + self.w / 2, self.y + self.h / 2)
+        """The box around the pad as it sits on the board (rotation included)."""
+        w, h = self.w, self.h
+        if self.rotation % 180:
+            a = math.radians(self.rotation)
+            c, s = abs(math.cos(a)), abs(math.sin(a))
+            w, h = round(self.w * c + self.h * s, 6), round(self.w * s + self.h * c, 6)
+        return (self.x - w / 2, self.y - h / 2, self.x + w / 2, self.y + h / 2)
+
+    @property
+    def solid(self) -> bool:
+        """Copper or a hole: what silkscreen and other parts keep off (not a paste window)."""
+        return bool(self.number) or self.kind == NPTH
 
 
 @dataclass
@@ -103,12 +120,19 @@ def to_sexpr(fp: Footprint) -> str:
     out += ['\t(fp_text user "${REFERENCE}"', "\t\t(at 0 0 0)", '\t\t(layer "F.Fab")',
             *_text_effects(fp.fab_text_size, 2), "\t)"]
     for p in fp.pads:
-        out += [f"\t(pad {_str(p.number)} {p.kind} {p.shape}", f"\t\t(at {_num(p.x)} {_num(p.y)})",
+        chamfered = p.shape == "chamfered_rect"  # KiCad's: a roundrect with no rounding and cut corners
+        at = f"{_num(p.x)} {_num(p.y)}" + (f" {_num(p.rotation)}" if p.rotation else "")
+        out += [f"\t(pad {_str(p.number)} {p.kind} {'roundrect' if chamfered else p.shape}", f"\t\t(at {at})",
                 f"\t\t(size {_num(p.w)} {_num(p.h)})"]
-        if p.drill is not None:
+        if p.drill is not None and p.drill_h is not None:
+            out.append(f"\t\t(drill oval {_num(p.drill)} {_num(p.drill_h)})")
+        elif p.drill is not None:
             out.append(f"\t\t(drill {_num(p.drill)})")
         out.append("\t\t(layers " + " ".join(_str(layer) for layer in p.layers) + ")")
-        if p.shape == "roundrect":
+        if chamfered:
+            out += ["\t\t(roundrect_rratio 0)", f"\t\t(chamfer_ratio {_num(p.chamfer_ratio)})",
+                    "\t\t(chamfer " + " ".join(p.chamfer) + ")"]
+        elif p.shape == "roundrect":
             out.append(f"\t\t(roundrect_rratio {_num(min(0.25, 0.25 / min(p.w, p.h)))})")
         out.append("\t)")
     out += ["\t(embedded_fonts no)", ")"]

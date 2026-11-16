@@ -34,7 +34,9 @@ class FootprintProposal(BaseModel):
     drawing: str = ""
     spec: dict[str, Any]
     dims: list[dict[str, Any]] = Field(default_factory=list)  # {name, min, nom, max, source} for the card
-    pads: list[dict[str, Any]] = Field(default_factory=list)  # the lands as built: {number, x, y, w, h, drill}
+    # the lands and bare holes as built: {number, x, y, w, h, drill, drill_h, rotation, hole, name}
+    pads: list[dict[str, Any]] = Field(default_factory=list)
+    symbol_check: dict[str, Any] = Field(default_factory=dict)  # {status, detail}: pads against the symbol's pins
     warnings: list[str] = Field(default_factory=list)
     stock: list[str] = Field(default_factory=list)
     kicad_mod: str
@@ -96,15 +98,27 @@ class FootprintStore:
         return self._set(pid, status="accepted", file=target.relative_to(self.project).as_posix())
 
 
+def pad_table(fp, names: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    """The footprint's lands and bare holes, as the card lists them and as
+    KiCad's read-back is compared against."""
+    names = names or {}
+    return [{"number": p.number, "x": p.x, "y": p.y, "w": p.w, "h": p.h, "drill": p.drill,
+             "drill_h": p.drill_h, "rotation": p.rotation, "hole": not p.number,
+             "name": names.get(p.number, "")}
+            for p in fp.pads if p.solid]
+
+
 def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnings: list[str],
-            stock: list[str]) -> FootprintProposal:
+            stock: list[str], symbol=None) -> FootprintProposal:
+    """`symbol` is symbols.find's (what, pins) for the spec's symbol, if it names one."""
+    from pcb_assistant.footprints import symbols
     from pcb_assistant.footprints.spec import dims
     from pcb_assistant.footprints.svg import drawing
 
     rows = [{"name": k, "min": d.min, "nom": d.nom, "max": d.max, "source": d.source} for k, d in dims(spec).items()]
     data = spec.model_dump()
-    pads = [{"number": p.number, "x": p.x, "y": p.y, "w": p.w, "h": p.h, "drill": p.drill}
-            for p in fp.pads if p.number]
+    pads = pad_table(fp, {p.number: p.name for p in symbol[1]} if symbol else None)
+    symbol_check = symbols.cross_check([p.number for p in fp.pads if p.number], symbol) if symbol else {}
     try:
         kicad_svg = render_svg(kicad_mod, fp.name)
     except (OSError, RuntimeError, subprocess.SubprocessError):
@@ -113,7 +127,7 @@ def propose(project_dir: str | Path, part: str, spec, fp, kicad_mod: str, warnin
         id=uuid.uuid4().hex[:10], part=part, name=fp.name, family=spec.family, package=spec.package,
         drawing=spec.drawing, spec=data, dims=rows, pads=pads, warnings=warnings, stock=stock,
         kicad_mod=kicad_mod, kicad_svg=kicad_svg, drawing_svg=drawing(fp),
-        kicad_check=kicad_check(kicad_mod, fp.name, pads), created_at=time.time(),
+        kicad_check=kicad_check(kicad_mod, fp.name, pads), symbol_check=symbol_check, created_at=time.time(),
     ))
 
 
@@ -207,18 +221,20 @@ def _sexpr(text: str) -> list:
 
 
 def _pads_in(saved: str) -> list[dict[str, Any]]:
-    """The numbered pads in a footprint file KiCad wrote."""
+    """The numbered pads and bare holes in a footprint file KiCad wrote."""
     (fp,) = _sexpr(saved)
     out = []
     for node in fp:
-        if not (isinstance(node, list) and node and node[0] == "pad" and node[1]):
+        if not (isinstance(node, list) and len(node) > 2 and node[0] == "pad"
+                and (node[1] or node[2] == "np_thru_hole")):
             continue
         fields = {n[0]: n[1:] for n in node[2:] if isinstance(n, list) and n}
-        at, size, drill = fields.get("at", ["0", "0"]), fields.get("size", ["0", "0"]), fields.get("drill")
-        if len(at) > 2 and float(at[2]) % 180:
-            size = list(reversed(size))  # rotated a quarter turn: KiCad's width is our height
+        at, size = fields.get("at", ["0", "0"]), fields.get("size", ["0", "0"])
+        drill = [float(v) for v in fields.get("drill", []) if isinstance(v, str) and v != "oval"]
         out.append({"number": node[1], "x": float(at[0]), "y": float(at[1]), "w": float(size[0]),
-                    "h": float(size[1]), "drill": float(drill[-1]) if drill else None})
+                    "h": float(size[1]), "rotation": float(at[2]) % 360 if len(at) > 2 else 0.0,
+                    "drill": drill[0] if drill else None,
+                    "drill_h": drill[1] if len(drill) > 1 and drill[1] != drill[0] else None})
     return out
 
 
@@ -240,19 +256,27 @@ def kicad_check(kicad_mod: str, name: str, pads: list[dict[str, Any]]) -> dict[s
     for p in sorted(found, key=lambda p: (p["x"], p["y"])):
         theirs.setdefault(p["number"], []).append(p)
     problems = []
+
+    def label(p: dict[str, Any]) -> str:
+        return f"pad {p['number']}" if p["number"] else f"hole at ({p['x']}, {p['y']})"
+
     if len(found) != len(pads):
         problems.append(f"KiCad read {len(found)} pads, the table has {len(pads)}")
     for mine in sorted(pads, key=lambda p: (p["x"], p["y"])):
         if not theirs.get(mine["number"]):
-            problems.append(f"pad {mine['number']} is missing")
+            problems.append(f"{label(mine)} is missing")
             continue
         t = theirs[mine["number"]].pop(0)
         off = [k for k in ("x", "y", "w", "h") if abs(t[k] - mine[k]) > TOL]
-        if (t["drill"] is None) != (mine["drill"] is None) or (
-                t["drill"] is not None and abs(t["drill"] - mine["drill"]) > TOL):
-            off.append("drill")
+        if abs((t["rotation"] - (mine.get("rotation") or 0) + 180) % 360 - 180) > TOL:
+            off.append("rotation")
+        for k in ("drill", "drill_h"):
+            a, b = t[k], mine.get(k)
+            if (a is None) != (b is None) or (a is not None and abs(a - b) > TOL):
+                off.append("drill")
+                break
         if off:
-            problems.append(f"pad {mine['number']}: {', '.join(off)} differ")
+            problems.append(f"{label(mine)}: {', '.join(off)} differ")
     if problems:
         return {"status": "mismatch", "detail": "; ".join(problems[:6])}
     n = len(found)

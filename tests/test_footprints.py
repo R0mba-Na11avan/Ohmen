@@ -158,10 +158,15 @@ def test_reading_pads_from_kicads_copy():
     saved = ('(footprint "X" (version 20250114) (generator "pcbnew")\n'
              '\t(pad "1" smd roundrect (at -1 0.5 90) (size 2 0.8) (layers "F.Cu"))\n'
              '\t(pad "" smd rect (at 0 0) (size 1 1) (layers "F.Paste"))\n'
-             '\t(pad "2" thru_hole circle (at 1 0) (size 1.7 1.7) (drill 1.0) (layers "*.Cu"))\n)')
-    assert proposals._pads_in(saved) == [
-        {"number": "1", "x": -1.0, "y": 0.5, "w": 0.8, "h": 2.0, "drill": None},  # quarter turn: w/h swap
-        {"number": "2", "x": 1.0, "y": 0.0, "w": 1.7, "h": 1.7, "drill": 1.0}]
+             '\t(pad "2" thru_hole circle (at 1 0) (size 1.7 1.7) (drill 1.0) (layers "*.Cu"))\n'
+             '\t(pad "3" thru_hole oval (at 3 0) (size 1 2) (drill oval 0.6 1.6) (layers "*.Cu"))\n'
+             '\t(pad "" np_thru_hole circle (at 5 0) (size 0.65 0.65) (drill 0.65) (layers "*.Cu"))\n)')
+    got = proposals._pads_in(saved)  # the paste window is no pad; the bare hole is
+    assert [(p["number"], p["x"], p["w"], p["h"], p["rotation"], p["drill"], p["drill_h"]) for p in got] == [
+        ("1", -1.0, 2.0, 0.8, 90.0, None, None),  # size stays the unrotated pad's
+        ("2", 1.0, 1.7, 1.7, 0.0, 1.0, None),
+        ("3", 3.0, 1.0, 2.0, 0.0, 0.6, 1.6),
+        ("", 5.0, 0.65, 0.65, 0.0, 0.65, None)]
 
 
 def test_kicad_check_without_kicad(monkeypatch):
