@@ -45,6 +45,79 @@ class Dim(BaseModel):
         return self.hi - self.lo
 
 
+class Refused(ValueError):
+    """The spec asks for something the builder won't draw; each error says why."""
+
+    def __init__(self, errors: list[str]):
+        super().__init__("; ".join(errors))
+        self.errors = errors
+
+
+Point = tuple[float, float]
+GraphicLayer = Literal["F.SilkS", "F.Fab", "Cmts.User"]
+
+
+class _Graphic(BaseModel):
+    layer: GraphicLayer = "F.SilkS"
+    width: float | None = Field(None, description="stroke width; default: the layer's usual")
+
+
+class GLine(_Graphic):
+    type: Literal["line"]
+    start: Point
+    end: Point
+
+
+class GArc(_Graphic):
+    type: Literal["arc"]
+    start: Point
+    mid: Point = Field(description="any point on the arc between its ends")
+    end: Point
+
+
+class GCircle(_Graphic):
+    type: Literal["circle"]
+    center: Point
+    radius: float
+    fill: bool = False
+
+
+class GPolygon(_Graphic):
+    type: Literal["polygon"]
+    points: list[Point]
+    fill: bool = False
+
+
+class GText(_Graphic):
+    type: Literal["text"]
+    at: Point = Field(description="the text's centre")
+    text: str
+    size: float = 1.0
+    rotation: Literal[0, 90, 180, 270] = 0
+
+
+Graphic = Annotated[Union[GLine, GArc, GCircle, GPolygon, GText], Field(discriminator="type")]
+
+
+class Silk(BaseModel):
+    """How the automatic silkscreen is drawn."""
+
+    outline: Literal["box", "corners", "none"] = "box"
+    pin1: Literal["auto", "triangle", "dot", "line", "none"] = Field(
+        "auto", description="auto: a triangle on a polarised part, unless polarity marks it")
+    polarity: Literal["none", "cathode_bar", "plus"] = Field(
+        "none", description="at pad 1: a bar across that end (diodes), or a + (electrolytics)")
+
+
+class Labels(BaseModel):
+    """Text beside pads, placed clear of copper."""
+
+    text: dict[str, str] = Field(default_factory=dict, description="pad number -> label, e.g. {'1': '+'}")
+    from_symbol: bool = Field(False, description="label every pad with its pin name from the spec's symbol")
+    size: float | None = Field(None, description="text height; default: what fits the pitch, up to 1 mm")
+    side: Literal["outside", "inside"] = "outside"
+
+
 class _Base(BaseModel):
     package: str = Field(description="the datasheet's package name, e.g. 'SOT-23-5 (DBV)'")
     drawing: str = Field("", description="which drawing/variant was used, e.g. 'DBV0005A, p.31'")
@@ -52,6 +125,11 @@ class _Base(BaseModel):
     symbol: str = Field("", description="the symbol this footprint is for: a refdes on the schematic "
                                         "('U3') or a library symbol ('MyLib:ESP32-MOD'); pads are "
                                         "checked against its pins")
+    silk: Silk = Field(default_factory=Silk)
+    graphics: list[Graphic] = Field(default_factory=list)
+    labels: Labels | None = None
+    body_outline: list[Point] = Field(default_factory=list, description="the body as a polygon, when it "
+                                                                         "isn't a plain rectangle")
 
 
 class DualGullwing(_Base):

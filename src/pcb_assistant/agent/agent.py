@@ -741,7 +741,7 @@ def build_toolset(
         from pcb_assistant.footprints import proposals, stock, symbols
         from pcb_assistant.footprints.build import build
         from pcb_assistant.footprints.kicad_mod import to_sexpr
-        from pcb_assistant.footprints.spec import FootprintSpec, check
+        from pcb_assistant.footprints.spec import FootprintSpec, Refused, check
 
         try:
             spec = TypeAdapter(FootprintSpec).validate_python(spec)
@@ -761,7 +761,16 @@ def build_toolset(
             found = stock.matches(spec)
         except Exception:  # no KiCad install to look in
             found = []
-        fp, built = build(spec, part)
+        if spec.labels and spec.labels.from_symbol:
+            if symbol is None:
+                return "labels.from_symbol needs \"symbol\": say which symbol the pin names come from."
+            named = {p.number: p.name for p in symbol[1] if p.name}
+            spec = spec.model_copy(update={"labels": spec.labels.model_copy(
+                update={"text": {**named, **spec.labels.text}})})  # kept in the spec: it rebuilds the same
+        try:
+            fp, built = build(spec, part)
+        except Refused as e:
+            return ("Not drawn as asked. Fix these and call again:\n- " + "\n- ".join(e.errors))
         pins = symbols.cross_check([p.number for p in fp.pads if p.number], symbol) if symbol else None
         versus = f"\nAgainst the symbol ({pins['status']}): {pins['detail']}" if pins else ""
         warnings = warnings + built

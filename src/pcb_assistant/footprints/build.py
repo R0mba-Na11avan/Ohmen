@@ -9,7 +9,9 @@ from __future__ import annotations
 import math
 import re
 
+from pcb_assistant.footprints import graphics
 from pcb_assistant.footprints import ipc7351 as ipc
+from pcb_assistant.footprints.graphics import SILK_MIN_SEGMENT, SILK_PAD_CLEARANCE
 from pcb_assistant.footprints.kicad_mod import (
     CRTYD_WIDTH,
     FAB_WIDTH,
@@ -18,6 +20,7 @@ from pcb_assistant.footprints.kicad_mod import (
     SILK_WIDTH,
     SMD_NO_PASTE,
     THT_LAYERS,
+    Circle,
     Footprint,
     Line,
     Pad,
@@ -32,12 +35,11 @@ from pcb_assistant.footprints.spec import (
     PinHeader,
     QuadGullwing,
     QuadNoLead,
+    Refused,
     drill_size,
 )
 
 SILK_OFFSET = 0.11  # silkscreen outside the body outline
-SILK_PAD_CLEARANCE = 0.2  # silkscreen kept off copper
-SILK_MIN_SEGMENT = 0.2  # shorter scraps left between pads are dropped
 EP_CLEARANCE = 0.2  # lands kept clear of an exposed pad
 PASTE_COVERAGE = 0.65  # of an exposed pad's area, split into windows
 
@@ -251,13 +253,24 @@ def build(spec, part: str) -> tuple[Footprint, list[str]]:
             if gap < 0.15 - 1e-6 and a.number != b.number:
                 warnings.append(f"pads {a.number} and {b.number} are only {gap:.2f} mm apart")
 
-    bx0, by0, bx1, by1 = cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2
+    outline = [(float(x), float(y)) for x, y in spec.body_outline]
+    if outline:  # a body that isn't a plain rectangle: its box stands in wherever a box is needed
+        if len(outline) < 3 or abs(graphics.area(outline)) < 1e-6:
+            raise Refused(["body_outline needs three points that enclose an area"])
+        bx0, by0 = min(x for x, _ in outline), min(y for _, y in outline)
+        bx1, by1 = max(x for x, _ in outline), max(y for _, y in outline)
+        cx, cy, bw, bh = (bx0 + bx1) / 2, (by0 + by1) / 2, bx1 - bx0, by1 - by0
+    else:
+        bx0, by0, bx1, by1 = cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2
     polarized = _polarized(spec)
-    # fab: the body, pin-1 corner chamfered when pin 1 matters
-    c = min(1.0, 0.25 * min(bw, bh)) if polarized else 0
-    corners = [(bx0 + c, by0), (bx1, by0), (bx1, by1), (bx0, by1), (bx0, by0 + c), (bx0 + c, by0)]
-    corners = [pt for i, pt in enumerate(corners) if i == 0 or pt != corners[i - 1]]
-    fp.lines += [Line(*corners[i], *corners[i + 1], "F.Fab", FAB_WIDTH) for i in range(len(corners) - 1)]
+    if outline:
+        fp.lines += [Line(*a, *b, "F.Fab", FAB_WIDTH) for a, b in zip(outline, outline[1:] + outline[:1])]
+    else:
+        # fab: the body, pin-1 corner chamfered when pin 1 matters
+        c = min(1.0, 0.25 * min(bw, bh)) if polarized else 0
+        corners = [(bx0 + c, by0), (bx1, by0), (bx1, by1), (bx0, by1), (bx0, by0 + c), (bx0 + c, by0)]
+        corners = [pt for i, pt in enumerate(corners) if i == 0 or pt != corners[i - 1]]
+        fp.lines += [Line(*corners[i], *corners[i + 1], "F.Fab", FAB_WIDTH) for i in range(len(corners) - 1)]
 
     # courtyard: pads and body plus the excess, on the 0.01 grid
     xs = [v for p in solid for v in (p.bbox[0], p.bbox[2])] + [bx0, bx1]
@@ -270,11 +283,35 @@ def build(spec, part: str) -> tuple[Footprint, list[str]]:
     keep = SILK_PAD_CLEARANCE + SILK_WIDTH / 2
     keepouts = [(p.bbox[0] - keep, p.bbox[1] - keep, p.bbox[2] + keep, p.bbox[3] + keep) for p in solid]
     s = SILK_OFFSET
-    for ln in _rect_lines(bx0 - s, by0 - s, bx1 + s, by1 + s, "F.SilkS", SILK_WIDTH):
-        fp.lines += _clip(ln, keepouts)
-    if polarized and copper:
-        fp.polys.append(_pin1_marker(next(p for p in copper if p.number == "1") if any(
-            p.number == "1" for p in copper) else copper[0], keepouts))
+    style = spec.silk
+    if style.outline == "none":
+        pass
+    elif outline:  # every edge of the polygon, whichever way it runs
+        grown = graphics.grow(outline, s)
+        for a, b in zip(grown, grown[1:] + grown[:1]):
+            fp.lines += [Line(*p, *q, "F.SilkS", SILK_WIDTH) for p, q in graphics.clip(a, b, keepouts)[0]]
+    elif style.outline == "corners":
+        n = min(1.0, 0.3 * min(bw, bh))
+        for x, dx in ((bx0 - s, n), (bx1 + s, -n)):
+            for y, dy in ((by0 - s, n), (by1 + s, -n)):
+                for ln in (Line(x, y, x + dx, y, "F.SilkS", SILK_WIDTH), Line(x, y, x, y + dy, "F.SilkS", SILK_WIDTH)):
+                    fp.lines += _clip(ln, keepouts)
+    else:
+        for ln in _rect_lines(bx0 - s, by0 - s, bx1 + s, by1 + s, "F.SilkS", SILK_WIDTH):
+            fp.lines += _clip(ln, keepouts)
+    mark = style.pin1
+    if mark == "auto":
+        mark = "triangle" if polarized and style.polarity == "none" else "none"
+    p1 = next((p for p in copper if p.number == "1"), copper[0]) if copper else None
+    if p1 and mark == "triangle":
+        fp.polys.append(_pin1_marker(p1, keepouts))
+    elif p1 and mark != "none":
+        _pin1_other(fp, p1, keepouts, mark)
+    if p1 and style.polarity != "none":
+        _polarity(fp, p1, style.polarity, (bx0 - s, by0 - s, bx1 + s, by1 + s), keep, keepouts)
+
+    graphics.draw(spec, fp, solid)
+    graphics.label(spec, fp, solid, (bx0, by0, bx1, by1))
 
     fp.ref_y = round(k0y - 0.9, 4)
     fp.value_y = round(k1y + 0.9, 4)
@@ -292,18 +329,63 @@ def _polarized(spec) -> bool:
     return True
 
 
+def _clear(pts, keepouts) -> bool:
+    xs, ys = [x for x, _ in pts], [y for _, y in pts]
+    return not any(min(xs) < k[2] and max(xs) > k[0] and min(ys) < k[3] and max(ys) > k[1] for k in keepouts)
+
+
 def _pin1_marker(p1: Pad, keepouts) -> Poly:
     """A small filled triangle pointing at pin 1: above it, or else to its left."""
     gap, depth, half = 0.27, 0.33, 0.24
-
-    def clear(pts):
-        xs, ys = [x for x, _ in pts], [y for _, y in pts]
-        return not any(min(xs) < k[2] and max(xs) > k[0] and min(ys) < k[3] and max(ys) > k[1]
-                       for k in keepouts)
-
     tip = (p1.x, p1.bbox[1] - gap)
     above = [tip, (tip[0] - half, tip[1] - depth), (tip[0] + half, tip[1] - depth)]
     tip = (p1.bbox[0] - gap, p1.y)
     left = [tip, (tip[0] - depth, tip[1] - half), (tip[0] - depth, tip[1] + half)]
-    pts = above if clear(above) or not clear(left) else left
+    pts = above if _clear(above, keepouts) or not _clear(left, keepouts) else left
     return Poly([(round(x, 4), round(y, 4)) for x, y in pts], "F.SilkS", SILK_WIDTH)
+
+
+def _pin1_other(fp: Footprint, p1: Pad, keepouts, mark: str) -> None:
+    """Pin 1 marked with a dot, or a line along the pad: above it, or else to its left."""
+    gap, r = 0.27, 0.15
+    x0, y0, x1, y1 = p1.bbox
+    if mark == "dot":
+        above, left = (p1.x, y0 - gap - r), (x0 - gap - r, p1.y)
+
+        def box(c):
+            return [(c[0] - r, c[1] - r), (c[0] + r, c[1] + r)]
+
+        at = above if _clear(box(above), keepouts) or not _clear(box(left), keepouts) else left
+        fp.circles.append(Circle(round(at[0], 4), round(at[1], 4), r, "F.SilkS", SILK_WIDTH, fill=True))
+        return
+    above, left = [(x0, y0 - gap), (x1, y0 - gap)], [(x0 - gap, y0), (x0 - gap, y1)]
+    (ax, ay), (bx, by) = above if _clear(above, keepouts) or not _clear(left, keepouts) else left
+    fp.lines.append(Line(round(ax, 4), round(ay, 4), round(bx, 4), round(by, 4), "F.SilkS", SILK_WIDTH))
+
+
+def _polarity(fp: Footprint, p1: Pad, mark: str, box, keep: float, keepouts) -> None:
+    """Pad 1's end of the part marked: a bar across it (a diode's cathode), or
+    a + beside it (an electrolytic's positive lead)."""
+    x0, y0, x1, y1 = box  # the silkscreen outline
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    px0, py0, px1, py1 = p1.bbox[0] - keep, p1.bbox[1] - keep, p1.bbox[2] + keep, p1.bbox[3] + keep
+    arm, off = 0.3, 0.55
+    if abs(p1.x - cx) >= abs(p1.y - cy):  # pad 1 at the left or right end
+        x = min(x0, px0) if p1.x < cx else max(x1, px1)
+        top = min(y0, py0)
+        if mark == "cathode_bar":
+            fp.lines += _clip(Line(round(x, 4), round(top, 4), round(x, 4), round(max(y1, py1), 4),
+                                   "F.SilkS", SILK_WIDTH), keepouts)
+            return
+        at = (x - off if p1.x < cx else x + off, top - off)
+    else:  # at the top or bottom end
+        y = min(y0, py0) if p1.y < cy else max(y1, py1)
+        left = min(x0, px0)
+        if mark == "cathode_bar":
+            fp.lines += _clip(Line(round(left, 4), round(y, 4), round(max(x1, px1), 4), round(y, 4),
+                                   "F.SilkS", SILK_WIDTH), keepouts)
+            return
+        at = (left - off, y - off if p1.y < cy else y + off)
+    ax, ay = round(at[0], 4), round(at[1], 4)
+    fp.lines += [Line(round(ax - arm, 4), ay, round(ax + arm, 4), ay, "F.SilkS", SILK_WIDTH),
+                 Line(ax, round(ay - arm, 4), ax, round(ay + arm, 4), "F.SilkS", SILK_WIDTH)]
