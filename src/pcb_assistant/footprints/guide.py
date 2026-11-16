@@ -51,6 +51,30 @@ Families:
   Pads may share a number (shield tabs, or a T- or L-shaped land built from
   overlapping rectangles).
 
+Silkscreen and drawing (any family; all optional). Without these the builder
+draws the body outline, kept off copper, and a pin-1 triangle on polarised parts.
+- "silk": {"outline": "box" | "corners" | "none",
+           "pin1": "auto" | "triangle" | "dot" | "line" | "none",
+           "polarity": "none" | "cathode_bar" | "plus"}
+  polarity marks pad 1's end: a bar across it (pad 1 = cathode) or a + beside
+  it (pad 1 = positive); it replaces the automatic pin-1 triangle.
+- "labels": {"text": {"1": "+", "2": "GND"}} puts text beside those pads, clear
+  of copper, sized to the pitch ("side": "inside" to put it toward the centre).
+  {"from_symbol": true} labels every pad with its pin name from "symbol".
+- "graphics": your own marks, each {"type", "layer" ("F.SilkS" default, "F.Fab",
+  "Cmts.User"), "width"?}:
+    {"type": "line", "start": [x, y], "end": [x, y]}
+    {"type": "arc", "start", "mid" (any point on the arc), "end"}
+    {"type": "circle", "center", "radius", "fill"?}
+    {"type": "polygon", "points": [[x, y], ...], "fill"?}
+    {"type": "text", "at" (centre), "text", "size" (default 1), "rotation" (0/90/180/270)}
+- "body_outline": [[x, y], ...] when the body isn't a plain rectangle (an
+  L-shaped connector, a module with an antenna overhang): the fab outline and
+  the silkscreen follow the polygon.
+Silkscreen rules: lines, arcs and outlines that run over a pad are trimmed off
+it and a hairline is widened, and the card says so. Text or a filled shape on a
+pad, and silkscreen text under 0.8 mm, are refused: move or resize and call again.
+
 Following a symbol: any spec may carry "symbol": a refdes on the schematic
 ("U3") or a library symbol ("MyLib:ESP32-MOD"). get_symbol_pins gives its pins;
 number the pads after them. The pads are then checked against the pins, and the

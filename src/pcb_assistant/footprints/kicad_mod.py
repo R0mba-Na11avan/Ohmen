@@ -69,6 +69,38 @@ class Poly:
 
 
 @dataclass
+class Arc:
+    x1: float
+    y1: float
+    xm: float  # any point on the arc between its ends
+    ym: float
+    x2: float
+    y2: float
+    layer: str
+    width: float
+
+
+@dataclass
+class Circle:
+    x: float
+    y: float
+    r: float
+    layer: str
+    width: float
+    fill: bool = False
+
+
+@dataclass
+class Text:
+    text: str
+    x: float  # the text's centre
+    y: float
+    rotation: float
+    layer: str
+    size: float = 1.0
+
+
+@dataclass
 class Footprint:
     name: str
     descr: str
@@ -77,6 +109,10 @@ class Footprint:
     pads: list[Pad] = field(default_factory=list)
     lines: list[Line] = field(default_factory=list)
     polys: list[Poly] = field(default_factory=list)
+    arcs: list[Arc] = field(default_factory=list)
+    circles: list[Circle] = field(default_factory=list)
+    texts: list[Text] = field(default_factory=list)
+    fixes: list[str] = field(default_factory=list)  # repairs the builder made to what was asked for
     ref_y: float = 0.0
     value_y: float = 0.0
     fab_text_size: float = 1.0
@@ -117,6 +153,15 @@ def to_sexpr(fp: Footprint) -> str:
         pts = " ".join(f"(xy {_num(x)} {_num(y)})" for x, y in pg.points)
         out += ["\t(fp_poly", f"\t\t(pts {pts})", *_stroke(pg.width),
                 f"\t\t(fill {'yes' if pg.fill else 'no'})", f"\t\t(layer {_str(pg.layer)})", "\t)"]
+    for a in fp.arcs:
+        out += ["\t(fp_arc", f"\t\t(start {_num(a.x1)} {_num(a.y1)})", f"\t\t(mid {_num(a.xm)} {_num(a.ym)})",
+                f"\t\t(end {_num(a.x2)} {_num(a.y2)})", *_stroke(a.width), f"\t\t(layer {_str(a.layer)})", "\t)"]
+    for c in fp.circles:
+        out += ["\t(fp_circle", f"\t\t(center {_num(c.x)} {_num(c.y)})", f"\t\t(end {_num(c.x + c.r)} {_num(c.y)})",
+                *_stroke(c.width), f"\t\t(fill {'yes' if c.fill else 'no'})", f"\t\t(layer {_str(c.layer)})", "\t)"]
+    for t in fp.texts:
+        out += [f"\t(fp_text user {_str(t.text)}", f"\t\t(at {_num(t.x)} {_num(t.y)} {_num(t.rotation)})",
+                f"\t\t(layer {_str(t.layer)})", *_text_effects(t.size, 2), "\t)"]
     out += ['\t(fp_text user "${REFERENCE}"', "\t\t(at 0 0 0)", '\t\t(layer "F.Fab")',
             *_text_effects(fp.fab_text_size, 2), "\t)"]
     for p in fp.pads:
