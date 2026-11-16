@@ -7,7 +7,7 @@ from __future__ import annotations
 from html import escape
 
 from pcb_assistant.footprints.graphics import arc_points, text_box
-from pcb_assistant.footprints.kicad_mod import NPTH, Footprint, _num
+from pcb_assistant.footprints.kicad_mod import NPTH, Footprint, Line, _num
 
 COPPER = "#D68A4C"
 PASTE = "#EEA766"
@@ -19,7 +19,9 @@ NUMBER = "#0A0F0D"
 NUMBER_ON_HOLE = "#E4EAE6"
 COMMENT = "#7FA6C9"
 MARGIN = 0.4  # mm around the courtyard
-LAYER = {"F.SilkS": SILK, "F.Fab": FAB, "Cmts.User": COMMENT}  # layers the model can draw on
+CUTOUT = "#E6C229"  # the board is milled away here
+KEEPOUT = "#E5484D"
+LAYER = {"F.SilkS": SILK, "F.Fab": FAB, "Cmts.User": COMMENT, "Edge.Cuts": CUTOUT}  # beyond pads and courtyard
 
 
 def _shape(tag: str, g, fill: bool) -> str:
@@ -79,9 +81,13 @@ def drawing(fp: Footprint) -> str:
     for t in fp.texts:
         box = text_box(t.x, t.y, t.text, t.size, t.rotation)
         pts += [(box[0], box[1]), (box[2], box[3])]
+    pts += [pt for z in fp.zones for pt in z.points]
     x0, y0 = min(x for x, _ in pts) - MARGIN, min(y for _, y in pts) - MARGIN
     w, h = max(x for x, _ in pts) + MARGIN - x0, max(y for _, y in pts) + MARGIN - y0
-    body = [_line(ln, FAB) for ln in fp.lines if ln.layer == "F.Fab"]
+    body = [f'<polygon points="{" ".join(f"{_num(x)},{_num(y)}" for x, y in z.points)}" fill="{KEEPOUT}" '
+            f'fill-opacity="0.16" stroke="{KEEPOUT}" stroke-width="0.08" stroke-dasharray="0.4 0.25"/>'
+            for z in fp.zones]
+    body += [_line(ln, FAB) for ln in fp.lines if ln.layer == "F.Fab"]
     body += [_line(ln, COURTYARD, "0.15 0.12") for ln in crt]
     body += [_pad(p, COPPER) for p in fp.pads if p.solid]
     body += [_pad(p, PASTE, 0.55) for p in fp.pads if not p.solid]  # paste windows on a thermal pad
@@ -89,7 +95,9 @@ def drawing(fp: Footprint) -> str:
     body += [f'<polygon points="{" ".join(f"{_num(x)},{_num(y)}" for x, y in pg.points)}" fill="{SILK}"/>'
              for pg in fp.polys if pg.layer == "F.SilkS" and pg.fill]
     # what the model drew itself, on whichever layer
-    body += [_line(ln, LAYER[ln.layer]) for ln in fp.lines if ln.layer in LAYER and ln.layer != "F.SilkS"]
+    body += [_line(ln, COMMENT) for ln in fp.lines if ln.layer == "Cmts.User"]
+    body += [_line(Line(ln.x1, ln.y1, ln.x2, ln.y2, ln.layer, 0.12), CUTOUT)  # a cut edge: drawn to be seen
+             for ln in fp.lines if ln.layer == "Edge.Cuts"]
     body += [_shape(f'<polygon points="{" ".join(f"{_num(x)},{_num(y)}" for x, y in pg.points)}"', pg, False)
              for pg in fp.polys if pg.layer in LAYER and not (pg.layer == "F.SilkS" and pg.fill)]
     body += [_shape(f'<circle cx="{_num(c.x)}" cy="{_num(c.y)}" r="{_num(c.r)}"', c, c.fill)

@@ -199,6 +199,6 @@ def test_the_tool_refuses_with_reasons_and_labels_from_the_symbol(tmp_path, desi
     create(part="U1", spec={**spec, "symbol": "mine:RADIO-MOD"}, propose=True)
     (p,) = proposals.FootprintStore(tmp_path).list()
     # pin names fill in around the label given by hand; the unnamed pin 3 gets none
-    assert p.spec["labels"]["text"] == {"1": "0V", "2": "3V3", "10": "IO0"}
+    assert p.spec["labels"]["text"] == {"1": "0V"} and p.spec["labels"]["auto"] == {"2": "3V3", "10": "IO0"}
     assert p.kicad_mod.count("(fp_text user") == 4  # three labels and the fab reference
     assert check(spec_of(p.spec))[0] == []

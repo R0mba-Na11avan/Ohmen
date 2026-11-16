@@ -60,7 +60,9 @@ draws the body outline, kept off copper, and a pin-1 triangle on polarised parts
   it (pad 1 = positive); it replaces the automatic pin-1 triangle.
 - "labels": {"text": {"1": "+", "2": "GND"}} puts text beside those pads, clear
   of copper, sized to the pitch ("side": "inside" to put it toward the centre).
-  {"from_symbol": true} labels every pad with its pin name from "symbol".
+  {"from_symbol": true} labels every pad with its pin name from "symbol"; a
+  name with no room (a pad in the middle, a pitch too fine) is left out and
+  noted, where a label you give in "text" that doesn't fit is refused.
 - "graphics": your own marks, each {"type", "layer" ("F.SilkS" default, "F.Fab",
   "Cmts.User"), "width"?}:
     {"type": "line", "start": [x, y], "end": [x, y]}
@@ -74,6 +76,19 @@ draws the body outline, kept off copper, and a pin-1 triangle on polarised parts
 Silkscreen rules: lines, arcs and outlines that run over a pad are trimmed off
 it and a hairline is widened, and the card says so. Text or a filled shape on a
 pad, and silkscreen text under 0.8 mm, are refused: move or resize and call again.
+
+Board cutouts and keepouts (any family). These change the board itself, so each
+needs "source" (datasheet page, drawing, or the engineer), nothing is repaired,
+and the card warns the engineer in red. Only add one the datasheet or the
+engineer asks for.
+- "cutouts": [{"points": [[x, y], ...], "source"}] is a hole milled through the
+  board (a mid-mount connector's opening). "closed": false makes it a notch:
+  an open run of points whose two ends must meet the board's own outline.
+  Refused if it would cut through a pad.
+- "keepouts": [{"points": [[x, y], ...], "layers": "all" | "front" | "back",
+  "tracks": true, "vias": true, "copper_pour": true (true = not allowed),
+  "source"}] is a rule area, e.g. under a module's antenna. Refused if it
+  covers one of the part's own pads while banning tracks.
 
 Following a symbol: any spec may carry "symbol": a refdes on the schematic
 ("U3") or a library symbol ("MyLib:ESP32-MOD"). get_symbol_pins gives its pins;

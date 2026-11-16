@@ -6,6 +6,22 @@ All notable changes are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Footprints for connectors and modules. A land pattern can now have rows of
+  pads, slotted and non-plated holes, turned pads, pads without paste or mask,
+  chamfered pads, and a body that is offset or not a rectangle.
+- Footprints that follow a symbol. The copilot reads a symbol's pins from the
+  schematic or the project's symbol libraries, numbers the pads after them, and
+  the card shows each pad's pin name and whether every pin has a pad.
+- Silkscreen you can ask for: corner marks or no outline, a dot, line or
+  triangle at pin 1, a cathode bar or a +, labels beside pads, and the
+  copilot's own lines, arcs, circles, polygons and text. Silkscreen that runs
+  over a pad is trimmed off it and the card says so; text on a pad is refused.
+- Board cutouts and keepout areas in a footprint, each with its source. The
+  card warns in red when a footprint changes the board, and KiCad's read-back
+  confirms the cutout and keepout survived.
+
 ### Changed
 
 - Footprints always go through the footprint tool. Asking for one proposes it

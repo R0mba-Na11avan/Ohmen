@@ -58,7 +58,10 @@ export function FootprintCard({ id }: { id: string }) {
     return error ? <div style={{ marginTop: 8, fontSize: type.size.xs, color: color.inkMuted }}>{error}</div> : null
   }
   const check = p.kicad_check?.status ? p.kicad_check : null
-  const mismatch = check?.status === 'mismatch'
+  const symbol = p.symbol_check?.status ? p.symbol_check : null
+  const risks = p.risks ?? []
+  // a pin with no pad can't be connected: as serious as a file KiCad reads differently
+  const mismatch = check?.status === 'mismatch' || symbol?.status === 'mismatch'
   return (
     <div
       style={{
@@ -79,9 +82,33 @@ export function FootprintCard({ id }: { id: string }) {
         <div style={{ fontFamily: type.mono, color: color.inkPrimary, overflowWrap: 'anywhere' }}>{p.name}</div>
         <div style={{ fontSize: type.size.xs, color: color.inkSecondary }}>
           {p.package} for {p.part}
-          {p.drawing ? ` · ${p.drawing}` : ''} · IPC-7351B nominal
+          {p.drawing ? ` · ${p.drawing}` : ''} ·{' '}
+          {p.family === 'custom' ? 'land pattern as given' : 'IPC-7351B nominal'}
         </div>
       </div>
+
+      {risks.length > 0 && (
+        <div
+          role="alert"
+          style={{
+            padding: '6px 8px',
+            border: `1px solid ${color.statusCritical}`,
+            borderRadius: radius.sm,
+            color: color.statusCritical,
+            fontSize: type.size.xs,
+            display: 'grid',
+            gap: 3,
+          }}
+        >
+          <div style={{ fontWeight: 600 }}>This footprint changes the board, not just the part.</div>
+          {risks.map((r, i) => (
+            <div key={i}>{r}</div>
+          ))}
+          <div style={{ color: color.inkSecondary }}>
+            Check each against its source. Keepouts show in the pad-numbers drawing (zoom in), not in KiCad's.
+          </div>
+        </div>
+      )}
 
       {kicadUrl && !previewFailed ? (
         <div style={{ display: 'grid', gap: 4 }}>
@@ -135,9 +162,28 @@ export function FootprintCard({ id }: { id: string }) {
         </div>
       )}
 
+      {symbol && (
+        <div
+          role="status"
+          style={{
+            fontSize: type.size.xs,
+            color:
+              symbol.status === 'match'
+                ? color.statusVerified
+                : symbol.status === 'mismatch'
+                  ? color.statusCritical
+                  : color.statusCaution,
+          }}
+        >
+          {symbol.status === 'match' ? '✓ ' : symbol.status === 'mismatch' ? '✗ ' : ''}
+          {symbol.detail}
+        </div>
+      )}
+
       <DimsTable dims={p.dims} />
       {/* an explicit land pattern has no package dims: its pads are the numbers to check */}
       <PadsTable pads={p.pads ?? []} open={p.dims.length === 0} />
+      <DrawnList drawn={p.drawn ?? []} fixes={p.fixes ?? []} />
       {zoomed && kicadUrl && (
         <ZoomView kicadUrl={kicadUrl} numberedUrl={numberedUrl} name={p.name} onClose={closeZoom} />
       )}
@@ -238,6 +284,9 @@ const LAYERS = [
   { name: 'silkscreen', color: '#E8E1B0' },
   { name: 'body (fab)', color: '#6B7C74' },
   { name: 'courtyard', color: '#A374CE', dashed: true },
+  { name: 'board cutout', color: '#E6C229' },
+  { name: 'keepout', color: '#E5484D', dashed: true },
+  { name: 'notes', color: '#7FA6C9' },
 ]
 
 function Legend() {
@@ -266,9 +315,17 @@ function PadsTable({ pads, open }: { pads: FootprintPad[]; open: boolean }) {
   if (pads.length === 0) return null
   const cell = { padding: '2px 6px', borderBottom: `1px solid ${color.paperRule}` }
   const drilled = pads.some((d) => d.drill != null)
+  const named = pads.some((d) => d.name)
+  const turned = pads.some((d) => d.rotation)
+  const holes = pads.filter((d) => d.hole).length
+  // a slot is drilled wider one way than the other
+  const drill = (d: FootprintPad) => (d.drill != null && d.drill_h != null ? `${d.drill} × ${d.drill_h}` : fmt(d.drill))
   return (
     <details open={open} style={{ fontSize: type.size.xs }}>
-      <summary style={{ cursor: 'pointer', color: color.inkSecondary }}>Pads as built ({pads.length})</summary>
+      <summary style={{ cursor: 'pointer', color: color.inkSecondary }}>
+        Pads as built ({pads.length - holes}
+        {holes > 0 ? `, and ${holes} bare hole${holes === 1 ? '' : 's'}` : ''})
+      </summary>
       <div style={{ overflowX: 'auto', marginTop: 6 }}>
         <table
           style={{
@@ -283,27 +340,59 @@ function PadsTable({ pads, open }: { pads: FootprintPad[]; open: boolean }) {
           <thead>
             <tr style={{ color: color.paperInkSoft, textAlign: 'left' }}>
               <th style={cell}>pad</th>
+              {named && <th style={cell}>pin</th>}
               <th style={cell}>x (mm)</th>
               <th style={cell}>y</th>
               <th style={cell}>width</th>
               <th style={cell}>height</th>
+              {turned && <th style={cell}>turned</th>}
               {drilled && <th style={cell}>drill</th>}
             </tr>
           </thead>
           <tbody style={{ fontFamily: type.mono }}>
-            {pads.map((d) => (
-              <tr key={d.number}>
-                <td style={cell}>{d.number}</td>
+            {/* pads can share a number (shield tabs), and bare holes have none */}
+            {pads.map((d, i) => (
+              <tr key={i}>
+                <td style={cell}>{d.hole ? 'hole' : d.number}</td>
+                {named && <td style={cell}>{d.name || '—'}</td>}
                 <td style={cell}>{d.x}</td>
                 <td style={cell}>{d.y}</td>
                 <td style={cell}>{d.w}</td>
                 <td style={cell}>{d.h}</td>
-                {drilled && <td style={cell}>{fmt(d.drill)}</td>}
+                {turned && <td style={cell}>{d.rotation ? `${d.rotation}°` : '—'}</td>}
+                {drilled && <td style={cell}>{drill(d)}</td>}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+    </details>
+  )
+}
+
+// What the model drew beyond the automatic outline, and what the builder had
+// to repair in it (silkscreen trimmed off a pad, a hairline widened).
+function DrawnList({ drawn, fixes }: { drawn: NonNullable<FootprintProposal['drawn']>; fixes: string[] }) {
+  if (drawn.length === 0 && fixes.length === 0) return null
+  return (
+    <details open={fixes.length > 0} style={{ fontSize: type.size.xs }}>
+      <summary style={{ cursor: 'pointer', color: color.inkSecondary }}>
+        Drawn by the copilot ({drawn.length}){fixes.length > 0 ? `, ${fixes.length} repaired` : ''}
+      </summary>
+      <ul style={{ margin: '6px 0 0', paddingLeft: 16, color: color.inkSecondary }}>
+        {drawn.map((g, i) => (
+          <li key={i}>
+            <span style={{ fontFamily: type.mono }}>{g.layer}</span> {g.type}: {g.detail}
+          </li>
+        ))}
+      </ul>
+      {fixes.length > 0 && (
+        <ul style={{ margin: '6px 0 0', paddingLeft: 16, color: color.statusCaution }}>
+          {fixes.map((f, i) => (
+            <li key={i}>Repaired: {f}</li>
+          ))}
+        </ul>
+      )}
     </details>
   )
 }

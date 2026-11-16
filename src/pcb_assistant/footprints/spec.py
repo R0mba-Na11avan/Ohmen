@@ -114,8 +114,29 @@ class Labels(BaseModel):
 
     text: dict[str, str] = Field(default_factory=dict, description="pad number -> label, e.g. {'1': '+'}")
     from_symbol: bool = Field(False, description="label every pad with its pin name from the spec's symbol")
+    auto: dict[str, str] = Field(default_factory=dict, description="filled in by Ohmen from the symbol; "
+                                                                   "one with no room is left out, not refused")
     size: float | None = Field(None, description="text height; default: what fits the pitch, up to 1 mm")
     side: Literal["outside", "inside"] = "outside"
+
+
+class Cutout(BaseModel):
+    """A hole milled through the board under the part (Edge.Cuts)."""
+
+    points: list[Point]
+    closed: bool = Field(True, description="false for a notch: its two ends must meet the board's own outline")
+    source: str = Field(description="where the cutout is dimensioned: datasheet page, drawing, or the engineer")
+
+
+class Keepout(BaseModel):
+    """An area the layout must keep copper out of (under an antenna, say)."""
+
+    points: list[Point]
+    layers: Literal["front", "back", "all"] = "all"
+    tracks: bool = Field(True, description="tracks not allowed")
+    vias: bool = Field(True, description="vias not allowed")
+    copper_pour: bool = Field(True, description="copper pour not allowed")
+    source: str = Field(description="where the keepout is asked for: datasheet page, drawing, or the engineer")
 
 
 class _Base(BaseModel):
@@ -130,6 +151,8 @@ class _Base(BaseModel):
     labels: Labels | None = None
     body_outline: list[Point] = Field(default_factory=list, description="the body as a polygon, when it "
                                                                          "isn't a plain rectangle")
+    cutouts: list[Cutout] = Field(default_factory=list)
+    keepouts: list[Keepout] = Field(default_factory=list)
 
 
 class DualGullwing(_Base):
