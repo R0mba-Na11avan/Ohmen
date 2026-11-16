@@ -72,6 +72,30 @@ def test_claude_decide_maps_answers_to_the_cli_reply():
     assert "didn't answer" in decide(lambda p: None, read)["message"]
 
 
+def test_claude_never_writes_a_footprint_file_by_hand():
+    from pcb_assistant.engines.claude_code import decide
+
+    def ask(payload):
+        raise AssertionError("the user isn't asked: it's refused outright")
+
+    for call in (
+        {"tool_name": "Write", "input": {"file_path": "C:/proj/ohmen.pretty/USB_C.kicad_mod", "content": "("}},
+        {"tool_name": "Edit", "input": {"file_path": "lib.pretty/X.KICAD_MOD", "old_string": "a", "new_string": "b"}},
+        {"tool_name": "Bash", "input": {"command": "cat > ohmen.pretty/x.kicad_mod <<EOF\n(footprint)\nEOF"}},
+        {"tool_name": "PowerShell", "input": {"command": "Set-Content x.kicad_mod '(footprint)'"}},
+    ):
+        out = decide(ask, call)
+        assert out["behavior"] == "deny" and "create_footprint" in out["message"], call
+
+    # everything else still goes to the user
+    for call in (
+        {"tool_name": "Write", "input": {"file_path": "C:/proj/notes.md", "content": "x"}},
+        {"tool_name": "Bash", "input": {"command": "git status"}},
+        {"tool_name": "Read", "input": {"file_path": "C:/elsewhere/x.kicad_mod"}},
+    ):
+        assert decide(lambda p: {"allow": True}, call)["behavior"] == "allow", call
+
+
 def test_claude_stream_parser_reports_builtin_tools_and_commands_in_the_chat():
     from pcb_assistant.engines.claude_code import StreamParser
 

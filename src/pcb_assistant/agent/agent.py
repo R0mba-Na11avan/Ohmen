@@ -1,6 +1,7 @@
 """Build the pydantic-ai chat agent for a project."""
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Literal
 
@@ -77,11 +78,14 @@ level you didn't get from DigiKey.
 is accounted for (the BOM covers the design), and redraw it after a change that \
 alters the architecture (a part swap, a new block, a rail change) — not for \
 cosmetic edits like a price or a note. It costs an LLM call.
-- When a part needs a footprint KiCad's library lacks, you can offer to generate one \
-from its datasheet's package drawing with create_footprint. Never generate one unasked: \
-check the spec, tell the engineer what you found (including any stock match), and \
-propose only after they say yes. They approve the result on a card before anything is \
-written.
+- Footprints are made with create_footprint and nothing else: never write or edit a \
+.kicad_mod file yourself, with any tool (Ohmen refuses it). It checks the numbers, has \
+KiCad read the file back, and shows the engineer a card to approve before anything is \
+written. Call footprint_guide first for the spec format. When the engineer asks for a \
+footprint, propose it straight away; when you notice one is missing yourself, check the \
+spec, say what you found, and propose only after they say yes. If KiCad's library \
+already has a match, give them its name instead of generating one. To change a \
+footprint Ohmen made, start from get_footprint_spec.
 - Project notes are your private notepad (the user never sees it), capped at \
 ~2000 chars, oldest notes dropped first. Record durable facts (intent, decisions, \
 constraints) tersely with remember(); when it fills, consolidate with rewrite_notes().
@@ -673,34 +677,47 @@ def build_toolset(
         return sheets.find(part)
 
     @toolset.tool_plain
-    def create_footprint(part: str, spec: dict, propose: bool = False) -> str:
-        """Check a package spec read off the datasheet's package drawing, and (with
-        propose=True) build an IPC-7351B footprint for the engineer to approve.
+    def footprint_guide() -> str:
+        """The spec format and rules for create_footprint. Call it before the
+        first create_footprint of a chat."""
+        from pcb_assistant.footprints.guide import GUIDE
 
-        Read the drawing pages with read_datasheet_pages(as_pdf=True). Call with
-        propose=False first: it checks the numbers and finds any matching footprint
-        in KiCad's library. Then ASK the engineer whether they want one generated;
-        only after they say yes, call again with propose=True. Nothing is written
-        until they accept.
+        return GUIDE
 
-        spec: {"family", "package" (datasheet's name), "drawing" (variant + page), ...}.
-        A dim is {"min","max"} or {"nom"} in mm plus "source": "<part> datasheet p.N".
-        Pin 1 top-left, counter-clockwise.
-        - dual_gullwing (SOIC/SOP/TSSOP/SOT-23): positions (both sides), skip_positions
-          (SOT-23 [2,4,6], SOT-23-5 [5]), pitch, dims lead_span (toe-toe), lead_length
-          (foot), lead_width, body_width, body_length, exposed_pad? [across, along]
-        - quad_gullwing (QFP): pins, pitch, dims lead_span_x/_y, lead_length, lead_width,
-          body_x, body_y, exposed_pad?
-        - dual_nolead (DFN/SON): pins, pitch, dims body_width, body_length,
-          terminal_length (L), terminal_width (b), exposed_pad? [E2, D2]
-        - quad_nolead (QFN): pins, pitch, dims body_x, body_y, terminal_length,
-          terminal_width, exposed_pad?
-        - chip: kind (resistor/capacitor/inductor/diode/led/fuse/other), dims
-          body_length, body_width, terminal_length
-        - pin_header (THT): rows, pins_per_row, pitch, row_pitch, dim lead_diameter
-        - custom (from a recommended land pattern): pads [{number,x,y,width,height,
-          shape,drill?}] (mm, +y down, centre origin), body_x, body_y, source,
-          polarized? (pin-1 mark; default only with more than two pads)
+    @toolset.tool_plain
+    def get_footprint_spec(footprint: str = "") -> str:
+        """The spec of a footprint Ohmen made (by name or proposal id), to change
+        and propose again. With no argument: lists Ohmen's footprints."""
+        from pcb_assistant.footprints import proposals
+
+        if project_dir is None:
+            return "No project is open."
+        items = [p for p in proposals.FootprintStore(project_dir).list() if p.status != "rejected"]
+        if not footprint.strip():
+            if not items:
+                return "Ohmen has made no footprints in this project."
+            return "Ohmen's footprints:\n" + "\n".join(
+                f"- [{p.id}] {p.name} for {p.part} ({p.status})" for p in items)
+        key = footprint.strip().removeprefix(f"{proposals.LIB_NAME}:")
+        hits = [p for p in items if key in (p.id, p.name)]
+        if not hits:
+            return f"No footprint '{footprint}' made by Ohmen here. Call with no argument to list them."
+        p = hits[-1]  # the newest
+        return (f"[{p.id}] {p.name} for part '{p.part}' ({p.status}). Change the spec and call "
+                f"create_footprint(part='{p.part}', spec=..., propose=True) with \"name\": \"{p.name}\" "
+                f"to replace it.\nspec: {json.dumps({**p.spec, 'name': p.name})}")
+
+    @toolset.tool_plain
+    def create_footprint(part: str, spec: dict, propose: bool = False, despite_stock: bool = False) -> str:
+        """The only way to make a KiCad footprint (.kicad_mod): never write the file
+        yourself. Checks a package spec and, with propose=True, builds the footprint
+        for the engineer to approve on a card; nothing is written until they accept.
+
+        Call footprint_guide first: it has the spec format. propose=True when the
+        engineer asked for the footprint; propose=False to only check the numbers
+        and look for a stock match when you noticed the need yourself (then ask).
+        despite_stock=True only when they want one generated although KiCad's
+        library has a match.
         """
         from pydantic import TypeAdapter, ValidationError
 
@@ -713,7 +730,7 @@ def build_toolset(
             spec = TypeAdapter(FootprintSpec).validate_python(spec)
         except ValidationError as e:
             problems = [f"{'.'.join(str(x) for x in err['loc'])}: {err['msg']}" for err in e.errors()[:8]]
-            return "The spec doesn't fit the format:\n- " + "\n- ".join(problems)
+            return ("The spec doesn't fit the format (footprint_guide has it):\n- " + "\n- ".join(problems))
         errors, warnings = check(spec)
         if errors:
             return "The spec doesn't describe a real package — re-read the drawing:\n- " + "\n- ".join(errors)
@@ -728,6 +745,10 @@ def build_toolset(
             return (f"Spec checks out. {have} Ask the engineer whether they want a footprint generated "
                     f"from the datasheet; call again with propose=True only if they say yes."
                     + (f"\nWorth a second look:{notes}" if notes else ""))
+        if found and not despite_stock:
+            return (f"Nothing proposed: KiCad's library already has {', '.join(found)}. Give the engineer "
+                    f"that name to assign on the symbol. Call again with despite_stock=True only if they "
+                    f"still want one generated from the datasheet.")
         if project_dir is None:
             return "No project is open."
         fp, built = build(spec, part)

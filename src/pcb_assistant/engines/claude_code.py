@@ -75,11 +75,34 @@ if they deny it, don't retry the same call, ask or move on. To give you another 
 folder they type /add-dir <path> in the chat."""
 
 
+FOOTPRINT_DENIED = (
+    "Ohmen doesn't let a footprint file be written by hand: it would skip the spec checks, KiCad's "
+    "read-back and the engineer's approval card. Build it with create_footprint (footprint_guide has "
+    "the spec format; get_footprint_spec to change one Ohmen made). To look at an existing footprint "
+    "file, use Read."
+)
+_FILE_TOOLS = {"Write", "Edit", "MultiEdit", "NotebookEdit"}
+_SHELL_TOOLS = {"Bash", "PowerShell"}
+
+
+def writes_footprint(tool: str, inp: dict[str, Any]) -> bool:
+    """Whether a built-in tool call would write a KiCad footprint file. A shell
+    command that so much as names one counts: Read is there for looking."""
+    if tool in _FILE_TOOLS:
+        path = str(inp.get("file_path") or inp.get("notebook_path") or "")
+        return path.lower().endswith(".kicad_mod")
+    if tool in _SHELL_TOOLS:
+        return ".kicad_mod" in str(inp.get("command") or "").lower()
+    return False
+
+
 def decide(ask: Ask, args: dict[str, Any]) -> dict[str, Any]:
     """Turn one permission-prompt-tool call into the CLI's allow/deny reply,
     asking the user through `ask`."""
     name = str(args.get("tool_name") or "")
     inp = args.get("input") if isinstance(args.get("input"), dict) else {}
+    if writes_footprint(name, inp):  # never reaches the user: there's no right answer but the tool
+        return {"behavior": "deny", "message": FOOTPRINT_DENIED}
     if name == "AskUserQuestion":
         ans = ask({"kind": "question", "tool": name, "questions": inp.get("questions") or []}) or {}
         answers = ans.get("answers") if isinstance(ans.get("answers"), dict) else None
