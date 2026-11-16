@@ -48,8 +48,9 @@ Families:
   - body_x, body_y (plain mm), body_offset? [x, y] when the body's centre
     isn't the origin, source, polarized? (pin-1 mark; default only with more
     than two pads)
-  Pads may share a number (shield tabs, or a T- or L-shaped land built from
-  overlapping rectangles).
+  Every pad has a number, and pads may share one (shield tabs, or a T- or
+  L-shaped land built from overlapping rectangles). A circle's width and
+  height are the same; a hole may not land on a pad.
 
 Silkscreen and drawing (any family; all optional). Without these the builder
 draws the body outline, kept off copper, and a pin-1 triangle on polarised parts.

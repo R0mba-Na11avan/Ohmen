@@ -119,7 +119,7 @@ def unchecked(project_dir: str | Path, before: dict[str, tuple[int, int]]) -> li
     """Footprint files written or changed since `before` that aren't a
     proposal's own text: something went around create_footprint."""
     root = Path(project_dir)
-    ours = {p.kicad_mod for p in FootprintStore(root).list()}
+    ours = {p.kicad_mod for p in FootprintStore(root).list() if p.status == "accepted"}
     stray = []
     for rel, stat in sorted(footprint_files(root).items()):
         if before.get(rel) == stat:

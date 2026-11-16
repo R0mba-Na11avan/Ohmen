@@ -61,8 +61,10 @@ READ_TOOLS = ("Read", "Glob", "Grep", "AskUserQuestion")
 PERMISSION_TOOL = f"mcp__{mcp_bridge.SERVER_NAME}__{mcp_bridge.PERMISSION_TOOL}"
 # The chat's own settings, which outrank the user's: their hooks stay off, and a
 # footprint file can't be written even by a tool they have allowed for good
-# (an allowed tool never reaches `decide`). An Edit rule covers every file tool.
-CHAT_SETTINGS = json.dumps({"disableAllHooks": True, "permissions": {"deny": ["Edit(**/*.kicad_mod)"]}})
+# (an allowed tool never reaches `decide`). An Edit rule covers every file tool;
+# the second pattern is the same for a folder outside the project.
+FOOTPRINT_DENY = ["Edit(**/*.kicad_mod)", "Edit(//**/*.kicad_mod)"]
+CHAT_SETTINGS = json.dumps({"disableAllHooks": True, "permissions": {"deny": FOOTPRINT_DENY}})
 
 # Asks the user something and blocks for the answer (None: stopped, or no answer).
 #   {"kind": "permission", "tool", "input"}   -> {"allow": bool, "message"?: str}

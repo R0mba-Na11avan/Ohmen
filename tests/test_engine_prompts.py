@@ -163,7 +163,8 @@ def test_claude_chat_run_routes_prompts_to_the_app(tmp_path, monkeypatch):
         assert _flag(args, "--tools") == "Read,Glob,Grep,AskUserQuestion,Skill"
         assert _flag(args, "--setting-sources") == "user"
         own = json.loads(_flag(args, "--settings"))  # outranks the user's: no hooks, no hand-written footprint
-        assert own == {"disableAllHooks": True, "permissions": {"deny": ["Edit(**/*.kicad_mod)"]}}
+        assert own == {"disableAllHooks": True, "permissions": {
+            "deny": ["Edit(**/*.kicad_mod)", "Edit(//**/*.kicad_mod)"]}}  # in the project, and anywhere else
         assert "--disable-slash-commands" not in args
         added = [args[i + 1] for i, a in enumerate(args) if a == "--add-dir"]
         assert str(extra) in added and len(added) == 2  # + the run's temp dir; a missing folder is dropped
@@ -333,6 +334,15 @@ def test_a_footprint_written_around_the_tool_is_caught_after_the_turn(tmp_path, 
     (notice,) = [f["text"] for f in frames if f["type"] == "notice"]
     assert "lib.pretty/by_script.kicad_mod" in notice and "nothing checked it" in notice
     assert "old.kicad_mod" not in notice and "saved_in_kicad" not in notice
+
+    # a copy of a proposal nobody accepted is no more checked than a hand-written file
+    from pcb_assistant.footprints.proposals import footprint_files, unchecked
+    store.add(FootprintProposal(id="p2", part="U2", name="Waiting", family="chip", package="0603",
+                                spec={}, kicad_mod='(footprint "Waiting")'))
+    before = footprint_files(tmp_path)
+    (tmp_path / "lib.pretty" / "copied.kicad_mod").write_text('(footprint "Waiting")', encoding="utf-8")
+    assert unchecked(tmp_path, before) == ["lib.pretty/copied.kicad_mod"]
+    (tmp_path / "lib.pretty" / "copied.kicad_mod").unlink()
 
     frames = _turn(tmp_path, "/tdd go on", "claude-sub:sonnet", sid)  # the model hears of it once, after the command
     assert calls[3].startswith("/tdd go on") and "lib.pretty/by_script.kicad_mod" in calls[3]

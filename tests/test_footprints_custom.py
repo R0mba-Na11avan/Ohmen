@@ -169,3 +169,32 @@ def test_a_footprint_follows_its_symbol(tmp_path, design, monkeypatch):
     p = proposals.FootprintStore(tmp_path).get(re.match(r"Footprint proposal \[(\w+)\]", out).group(1))
     assert p.symbol_check["status"] == "match"
     assert [(x["number"], x["name"]) for x in p.pads] == [("1", "GND"), ("2", "3V3"), ("3", ""), ("10", "IO0")]
+
+
+def _two_pads(*pads, **extra):
+    base = {"family": "custom", "package": "X", "drawing": "p.1", "source": "p.1", "body_x": 3.0, "body_y": 2.0}
+    return spec_of({**base, "pads": list(pads), **extra})
+
+
+def _pad(number, x, y, **more):
+    return {"number": number, "x": x, "y": y, "width": 0.8, "height": 0.8, **more}
+
+
+@pytest.mark.parametrize("spec, why", [
+    # copper with no number would be left out of the courtyard, the silkscreen keep-off and the pad table
+    (_two_pads(_pad("1", -1, 0), _pad("", 0, 1.6, width=2, height=1)), "give it a number"),
+    # KiCad draws a circle pad at its width: the height would be a lie
+    (_two_pads(_pad("1", -1, 0, shape="circle", height=2.5), _pad("2", 1, 0)), "one diameter"),
+    # a bare hole through a pad, however the pad is turned
+    (_two_pads(_pad("1", 0, 0, width=2, height=1, rotation=30), _pad("2", 3, 0),
+               holes=[{"x": 0.7, "y": -0.4, "drill": 0.3}]), "lands on pad 1"),
+])
+def test_pads_that_would_fool_the_later_checks_are_refused(spec, why):
+    errors, _ = check(spec)
+    assert why in " ".join(errors)
+
+
+def test_a_hole_beside_a_turned_pad_is_fine():
+    spec = _two_pads(_pad("1", 0, 0, width=2, height=1, rotation=30), _pad("2", 3, 0),
+                     holes=[{"x": 0.7, "y": 0.6, "drill": 0.3}])  # inside the pad's box, off its copper
+    assert check(spec)[0] == []
