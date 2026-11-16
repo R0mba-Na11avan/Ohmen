@@ -301,17 +301,23 @@ def test_a_footprint_written_around_the_tool_is_caught_after_the_turn(tmp_path, 
                                 spec={}, kicad_mod='(footprint "Checked")'))
     (tmp_path / "lib.pretty").mkdir()
     (tmp_path / "lib.pretty" / "old.kicad_mod").write_text("(footprint old)", encoding="utf-8")
-    turns = [
-        lambda: store.accept("p1"),  # the card's own write
-        lambda: (tmp_path / "lib.pretty" / "by_script.kicad_mod").write_text("(footprint x)", encoding="utf-8"),
-        lambda: None,
-        lambda: None,
+    def write(name):
+        return lambda: (tmp_path / "lib.pretty" / name).write_text("(footprint x)", encoding="utf-8")
+
+    turns = [  # (the Claude Code tool the turn ran, what happened to the files meanwhile)
+        ("Bash: python accept.py", lambda: store.accept("p1")),  # the card's own write
+        ("Read notes.md", write("saved_in_kicad.kicad_mod")),  # no shell: it can't have been the model
+        ("Bash: python gen.py", write("by_script.kicad_mod")),
+        ("Skill", lambda: None),
+        ("Read notes.md", lambda: None),
     ]
     calls = []
 
     def run(model_spec, system, prompt, *, on_event=None, **kw):
         calls.append(prompt)
-        turns[len(calls) - 1]()
+        tool, files = turns[len(calls) - 1]
+        on_event({"type": "tool_call", "name": tool, "args": {}})
+        files()
         on_event({"type": "token", "text": "done"})
         return EngineResult(text="", session_id="cli-1", usage=Usage(requests=1))
 
@@ -320,13 +326,17 @@ def test_a_footprint_written_around_the_tool_is_caught_after_the_turn(tmp_path, 
     sid = frames[0]["chat_id"]
     assert not [f for f in frames if f["type"] == "notice"]
 
+    frames = _turn(tmp_path, "what's in my notes?", "claude-sub:sonnet", sid)
+    assert not [f for f in frames if f["type"] == "notice"]
+
     frames = _turn(tmp_path, "make me a footprint", "claude-sub:sonnet", sid)
     (notice,) = [f["text"] for f in frames if f["type"] == "notice"]
-    assert "lib.pretty/by_script.kicad_mod" in notice and "old.kicad_mod" not in notice and "unverified" in notice
+    assert "lib.pretty/by_script.kicad_mod" in notice and "nothing checked it" in notice
+    assert "old.kicad_mod" not in notice and "saved_in_kicad" not in notice
 
     frames = _turn(tmp_path, "/tdd go on", "claude-sub:sonnet", sid)  # the model hears of it once, after the command
-    assert calls[2].startswith("/tdd go on") and "lib.pretty/by_script.kicad_mod" in calls[2]
-    assert "create_footprint" in calls[2] and "by_script" not in calls[1]
+    assert calls[3].startswith("/tdd go on") and "lib.pretty/by_script.kicad_mod" in calls[3]
+    assert "create_footprint" in calls[3] and "by_script" not in calls[2]
     assert not [f for f in frames if f["type"] == "notice"]
     _turn(tmp_path, "thanks", "claude-sub:sonnet", sid)
-    assert "by_script" not in calls[3]
+    assert "by_script" not in calls[4]
