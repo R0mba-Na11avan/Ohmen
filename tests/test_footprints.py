@@ -278,7 +278,53 @@ def test_create_footprint_tool_asks_first_then_proposes(tmp_path, design, monkey
     assert not (tmp_path / ".pcb_assistant" / "footprint_proposals.json").exists()
     assert "re-read the drawing" in tool(part="U9", spec={**SOIC8, "pitch": 2.0})
     assert "doesn't fit the format" in tool(part="U9", spec={"family": "soic"})
-    out = tool(part="U9", spec=SOIC8, propose=True)
+    # asked for directly, but KiCad has it: the stock name, no card
+    stopped = tool(part="U9", spec=SOIC8, propose=True)
+    assert stopped.startswith("Nothing proposed") and "SOIC-8_3.9x4.9mm_P1.27mm" in stopped
+    assert not (tmp_path / ".pcb_assistant" / "footprint_proposals.json").exists()
+    out = tool(part="U9", spec=SOIC8, propose=True, despite_stock=True)
     pid = re.match(r"Footprint proposal \[(\w+)\]", out).group(1)
     assert proposals.FootprintStore(tmp_path).get(pid).status == "pending"
     assert follow_up_frames(tmp_path, "create_footprint", out) == [{"type": "footprint", "id": pid}]
+
+
+def test_a_direct_request_proposes_in_one_call(tmp_path, design, monkeypatch):
+    from pcb_assistant.agent.agent import build_toolset
+
+    monkeypatch.setattr(stock, "matches", lambda spec, lib=None: [])
+    out = build_toolset("test", tmp_path, design).tools["create_footprint"].function(
+        part="U9", spec=SOIC8, propose=True)
+    assert out.startswith("Footprint proposal [")
+
+
+def test_a_made_footprint_can_be_read_back_and_revised(tmp_path, design, monkeypatch):
+    from pcb_assistant.agent.agent import build_toolset
+
+    monkeypatch.setattr(stock, "matches", lambda spec, lib=None: [])
+    tools = build_toolset("test", tmp_path, design).tools
+    read, create = tools["get_footprint_spec"].function, tools["create_footprint"].function
+    assert "no footprints" in read()
+    create(part="U9", spec=SOIC8, propose=True)
+    assert "SOIC-8_U9 for U9 (pending)" in read()
+    assert "No footprint 'nope'" in read("nope")
+    got = read("ohmen:SOIC-8_U9")
+    spec = json.loads(got.split("spec: ", 1)[1])
+    assert spec["name"] == "SOIC-8_U9" and spec["pitch"] == SOIC8["pitch"]
+    # proposing the changed spec under the same name replaces the pending card
+    spec["body_length"] = {**spec["body_length"], "max": spec["body_length"]["max"] + 0.1}
+    assert create(part="U9", spec=spec, propose=True).startswith("Footprint proposal [")
+    pending = [p for p in proposals.FootprintStore(tmp_path).list() if p.status == "pending"]
+    assert [p.name for p in pending] == ["SOIC-8_U9"]
+
+
+def test_the_guide_covers_every_family(tmp_path, design):
+    from typing import get_args
+
+    from pcb_assistant.agent.agent import build_toolset
+
+    tools = build_toolset("test", tmp_path, design).tools
+    guide = tools["footprint_guide"].function()
+    for model in get_args(get_args(FootprintSpec)[0]):
+        assert get_args(model.model_fields["family"].annotation)[0] in guide
+    # the tool itself stays short: every chat turn carries its description
+    assert len(tools["create_footprint"].description) < 800

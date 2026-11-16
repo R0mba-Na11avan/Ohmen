@@ -4,6 +4,16 @@ All notable changes are listed here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and versions follow
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- Footprints always go through the footprint tool. Asking for one proposes it
+  straight away (the approval card is still the gate), and a match in KiCad's
+  library is named instead of generating a duplicate. Claude Code with all
+  tools on can no longer write a `.kicad_mod` file by hand.
+- The copilot can read back a footprint Ohmen made and propose a changed one.
+
 ## [0.1.2] - 2026-11-11
 
 ### Added
