@@ -35,6 +35,8 @@ All notable changes are listed here. The format follows
 - The chat folds the copilot's tool calls behind a "steps" line once its answer
   starts. Calls still show as they happen, and reviews, footprints, diagram
   and BOM changes keep a line of their own.
+- In Findings, clicking a part in the checked-parts row shows only that part's
+  findings; click it again, or Show all, to see everything.
 
 ## [0.1.2] - 2026-11-11
 
