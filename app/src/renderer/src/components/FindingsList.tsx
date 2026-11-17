@@ -139,7 +139,20 @@ function RunLine({ label, run }: { label: string; run: RunInfo }) {
 
 // What ran, when, and what it covered — so an empty result reads as "checked and
 // clean", not "nothing happened".
-function ReviewReceipt({ review }: { review: ReviewResponse }) {
+// Whether a finding is about this part (a finding may name several: "U1, C3").
+function about(f: Finding, ref: string): boolean {
+  return (f.component_ref ?? '').split(/[^A-Za-z0-9_+-]+/).includes(ref)
+}
+
+function ReviewReceipt({
+  review,
+  only,
+  onPick,
+}: {
+  review: ReviewResponse
+  only: string | null // the part the findings are filtered to
+  onPick: (ref: string | null) => void
+}) {
   const { rules, review: ai } = review.runs
   const failed = (ref: string) =>
     review.findings.filter((f) => f.source === 'pattern' && f.component_ref === ref).length
@@ -164,25 +177,29 @@ function ReviewReceipt({ review }: { review: ReviewResponse }) {
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
             {review.coverage.map((c) => {
               const bad = failed(c.ref)
+              const picked = only === c.ref
               return (
-                <span
+                <button
                   key={`${c.ref}-${c.part}`}
-                  title={c.part}
+                  title={picked ? `${c.part}: showing only ${c.ref}. Click to show all` : `${c.part}: show only ${c.ref}'s findings`}
+                  aria-pressed={picked}
+                  onClick={() => onPick(picked ? null : c.ref)}
                   style={{
                     fontFamily: type.mono,
                     fontSize: type.size.xs,
                     padding: '2px 7px',
                     borderRadius: radius.sm,
-                    border: `1px solid ${bad ? color.statusCaution : color.benchLine}`,
+                    border: `1px solid ${picked ? color.copper : bad ? color.statusCaution : color.benchLine}`,
                     color: bad ? color.statusCaution : color.inkSecondary,
-                    background: color.benchRaised,
+                    background: picked ? 'rgba(214, 138, 76, 0.16)' : color.benchRaised, // copper, faint
+                    cursor: 'pointer',
                   }}
                 >
                   <span style={{ color: color.inkPrimary }}>{c.ref}</span> {c.part.split(' ')[0]}{' '}
                   <span style={{ color: bad ? color.statusCaution : color.statusVerified }}>
                     {c.checks - Math.min(bad, c.checks)}/{c.checks}
                   </span>
-                </span>
+                </button>
               )
             })}
           </div>
@@ -234,7 +251,11 @@ function Drawer({
 
 export function FindingsList({ review, onChanged }: { review: ReviewResponse; onChanged: () => void }) {
   const { findings, dismissed, dropped } = review
-  const count = (s: string) => findings.filter((f) => f.severity === s).length
+  // Clicking a part in the receipt narrows the findings to it; a part a newer review no longer lists is forgotten.
+  const [picked, setPicked] = useState<string | null>(null)
+  const only = picked && review.coverage.some((c) => c.ref === picked) ? picked : null
+  const shown = only ? findings.filter((f) => about(f, only)) : findings
+  const count = (s: string) => shown.filter((f) => f.severity === s).length
 
   const drawers = (
     <>
@@ -283,7 +304,7 @@ export function FindingsList({ review, onChanged }: { review: ReviewResponse; on
             </div>
           </div>
         </div>
-        <ReviewReceipt review={review} />
+        <ReviewReceipt review={review} only={only} onPick={setPicked} />
         {drawers}
       </div>
     )
@@ -291,7 +312,7 @@ export function FindingsList({ review, onChanged }: { review: ReviewResponse; on
 
   return (
     <div>
-      <ReviewReceipt review={review} />
+      <ReviewReceipt review={review} only={only} onPick={setPicked} />
       {/* summary — a test report header, not a chat */}
       <div
         style={{
@@ -307,7 +328,20 @@ export function FindingsList({ review, onChanged }: { review: ReviewResponse; on
         <StatNumeral value={count('verify')} label="to verify" tone={color.statusCaution} />
         <StatNumeral value={count('cosmetic')} label="cosmetic" tone={color.inkSecondary} />
       </div>
-      {findings.map((f) => (
+      {only && (
+        <div style={{ fontSize: type.size.sm, color: color.inkSecondary, marginBottom: 12 }}>
+          {shown.length === 0
+            ? `No findings for ${only}.`
+            : `Showing ${shown.length} of ${findings.length} findings: ${only} only.`}{' '}
+          <button
+            onClick={() => setPicked(null)}
+            style={{ all: 'unset', cursor: 'pointer', color: color.copper, textDecoration: 'underline' }}
+          >
+            Show all
+          </button>
+        </div>
+      )}
+      {shown.map((f) => (
         <FindingCard key={f.mute_key} f={f} action="dismiss" onChanged={onChanged} />
       ))}
       {drawers}
