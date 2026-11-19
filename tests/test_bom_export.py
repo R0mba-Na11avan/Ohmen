@@ -1,5 +1,6 @@
 """The BOM exports: CSV layout stays put; the Excel sheet groups and flags parts."""
 import io
+import zipfile
 from datetime import date
 
 from openpyxl import load_workbook
@@ -66,15 +67,17 @@ def test_section_rows_subtotals_and_total_are_formulas():
     heads = [i + 1 for i, v in enumerate(col) if isinstance(v, str) and v.endswith(")") and i >= HEADER_ROW]
     for h in heads:
         assert ws.cell(row=h, column=lt).value.startswith("=SUM(")
-    total = ws.cell(row=ws.max_row, column=lt).value
-    assert total == "=SUM(" + ",".join(f"L{h}" for h in heads) + ")"
+        assert ws.cell(row=h, column=lt).data_type == "f"  # a live formula, not text
+    total = ws.cell(row=ws.max_row, column=lt)
+    assert total.value == "=SUM(" + ",".join(f"L{h}" for h in heads) + ")" and total.data_type == "f"
 
 
 def test_line_total_formula_follows_min_order_and_rejected_is_zero():
     ws = sheet()
     col = first_col(ws)
     j = col.index("J1") + 1
-    assert ws.cell(row=j, column=COL["Line total"]).value == f'=IF(K{j}="","",MAX(B{j},J{j})*K{j})'
+    cell = ws.cell(row=j, column=COL["Line total"])
+    assert cell.value == f'=IF(K{j}="","",MAX(B{j},J{j})*K{j})' and cell.data_type == "f"
     rej = col.index("R2") + 1
     assert ws.cell(row=rej, column=COL["Line total"]).value == 0
     assert ws.cell(row=rej, column=1).font.strike
@@ -105,7 +108,7 @@ def test_widths_fit_content_with_caps():
     ws = sheet([row("a", ["U1"], value="x" * 200, footprint="Package_SO:SOIC-8")])
     width = lambda h: ws.column_dimensions[ws.cell(row=HEADER_ROW, column=COL[h]).column_letter].width
     assert width("Value") == 24  # capped
-    assert width("Footprint") == len("Package_SO:SOIC-8") + 2
+    assert width("Footprint") == round(len("Package_SO:SOIC-8") * 1.15) + 2
 
 
 def test_empty_bom_still_exports():
@@ -118,3 +121,11 @@ def test_filenames():
     assert export_filename('a/b:c"', "csv", date(2026, 1, 2)) == "a_b_c_-BOM-2026-01-02.csv"
     h = content_disposition("Ωhm-BOM-2026-11-19.csv")
     assert 'filename="_hm-BOM-2026-11-19.csv"' in h and "filename*=UTF-8''%CE%A9hm" in h
+
+
+def test_excel_error_triangles_are_switched_off():
+    data = bom_xlsx(ROWS, "Board")
+    xml = zipfile.ZipFile(io.BytesIO(data)).read("xl/worksheets/sheet1.xml").decode()
+    assert '<pageMargins' in xml and xml.index("<pageMargins") < xml.index("<ignoredErrors>")
+    assert 'formula="1"' in xml and 'numberStoredAsText="1"' in xml
+    load_workbook(io.BytesIO(data))  # still a valid workbook

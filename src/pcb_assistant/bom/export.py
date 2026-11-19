@@ -165,19 +165,20 @@ def bom_xlsx(rows: list[BomRow], project_name: str, today: date | None = None) -
     warn = (PatternFill("solid", fgColor="FFEB9C"), Font(color="9C5700"))
     grey = "A6A6A6"
 
-    def put(r: int, c: int, value, width: str | None = None):
-        """Write a cell; user text never runs as a formula and loses control chars.
-        `width` is the text the column should fit (defaults to the value)."""
+    def put(r: int, c: int, value, width: str | None = None, formula: bool = False):
+        """Write a cell; user text never runs as a formula and loses control chars
+        (only `formula=True` writes one). `width` is the text the column should
+        fit (defaults to the value)."""
         cell = ws.cell(row=r, column=c)
         if isinstance(value, str):
             value = ILLEGAL_CHARACTERS_RE.sub("", value)
             cell.value = value
-            if value.startswith("="):
+            if value.startswith("=") and not formula:
                 cell.data_type = "s"
         else:
             cell.value = value
         shown = width if width is not None else ("" if value is None else str(value))
-        widths[c] = max(widths[c], len(shown) + 2)
+        widths[c] = max(widths[c], round(len(shown) * 1.15) + 2)  # Calibri caps run wide
         return cell
 
     def borders(r: int, stripe: str | None = None, heavy_bottom: bool = False):
@@ -224,14 +225,14 @@ def bom_xlsx(rows: list[BomRow], project_name: str, today: date | None = None) -
             _write_row(ws, put, r, row, (L, K, B, J), bad, warn, grey)
             borders(r, stripe=ptype.stripe)
             r += 1
-        sub = put(head, _COL["Line total"], f"=SUM({L}{first}:{L}{r - 1})", width="$0000.00")
+        sub = put(head, _COL["Line total"], f"=SUM({L}{first}:{L}{r - 1})", width="$0000.00", formula=True)
         sub.font = Font(bold=True)
         sub.number_format = _PRICE_FMT
         subtotal_cells.append(f"{L}{head}")
 
     # Board total.
     put(r, 1, "TOTAL").font = Font(bold=True)
-    tot = put(r, _COL["Line total"], f"=SUM({','.join(subtotal_cells)})" if subtotal_cells else 0, width="$0000.00")
+    tot = put(r, _COL["Line total"], f"=SUM({','.join(subtotal_cells)})" if subtotal_cells else 0, width="$0000.00", formula=True)
     tot.font = Font(bold=True)
     tot.number_format = _PRICE_FMT
     for c in range(1, ncols + 1):
@@ -246,7 +247,30 @@ def bom_xlsx(rows: list[BomRow], project_name: str, today: date | None = None) -
 
     buf = io.BytesIO()
     wb.save(buf)
-    return buf.getvalue()
+    return _ignore_errors(buf.getvalue(), f"A1:{_letter('Status')}{r}")
+
+
+def _ignore_errors(xlsx: bytes, ref: str) -> bytes:
+    """Turn off Excel's green-triangle checks over the sheet. Line totals sit
+    between subtotal rows ('inconsistent formula') and values like 330 are text
+    on purpose. openpyxl can't write <ignoredErrors>, so add it to the sheet XML;
+    it belongs right after <pageMargins>, the last element openpyxl writes here."""
+    import zipfile
+
+    tag = (f'<ignoredErrors><ignoredError sqref="{ref}" formula="1" formulaRange="1" '
+           'numberStoredAsText="1" emptyCellReference="1"/></ignoredErrors>')
+    src = zipfile.ZipFile(io.BytesIO(xlsx))
+    out = io.BytesIO()
+    with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as dst:
+        for item in src.infolist():
+            data = src.read(item.filename)
+            if item.filename == "xl/worksheets/sheet1.xml":
+                xml = data.decode("utf-8")
+                m = re.search(r"<pageMargins[^>]*/>", xml)
+                at = m.end() if m else xml.rindex("</worksheet>")
+                data = (xml[:at] + tag + xml[at:]).encode("utf-8")
+            dst.writestr(item, data)
+    return out.getvalue()
 
 
 def _write_row(ws, put, r: int, row: BomRow, letters, bad, warn, grey: str) -> None:
@@ -282,8 +306,8 @@ def _write_row(ws, put, r: int, row: BomRow, letters, bad, warn, grey: str) -> N
 
     # Line total: the app's rule (a minimum lot costs the whole lot); rejected = 0.
     lt_shown = "" if row.line_total is None else f"${row.line_total:,.2f}"
-    formula = 0 if rejected else f'=IF({K}{r}="","",MAX({B}{r},{J}{r})*{K}{r})'
-    lt = put(r, _COL["Line total"], formula, width=lt_shown)
+    lt_value = 0 if rejected else f'=IF({K}{r}="","",MAX({B}{r},{J}{r})*{K}{r})'
+    lt = put(r, _COL["Line total"], lt_value, width=lt_shown, formula=True)
     lt.number_format = _PRICE_FMT
 
     if rejected:
