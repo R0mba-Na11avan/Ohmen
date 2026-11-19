@@ -268,7 +268,9 @@ def test_bom_line_total_and_csv(tmp_path):
     assert r.json()["line_total"] == 1.0  # 4 × 0.25
 
     client.post("/bom/row", json={"mpn": "PRICEY", "qty": 1, "unit_price": 99})
-    csv_text = client.get("/bom.csv").text
+    resp = client.get("/bom.csv")
+    assert f'filename="{tmp_path.name}-BOM-' in resp.headers["content-disposition"]
+    csv_text = resp.text
     assert "unit_price" in csv_text and "line_total" in csv_text
     assert "TOTAL" in csv_text
     # total line = 1.0 + 99 = 100.0
@@ -276,6 +278,12 @@ def test_bom_line_total_and_csv(tmp_path):
 
     client.patch(f"/bom/row/{rid}", json={"unit_price": 0.5})
     assert client.get("/bom").json()[0]["line_total"] == 2.0
+
+    xlsx = client.get("/bom.xlsx", headers={"Origin": "http://localhost:5173"})
+    assert xlsx.status_code == 200 and xlsx.content[:2] == b"PK"  # a zip, i.e. a workbook
+    assert xlsx.headers["content-disposition"].endswith(".xlsx")
+    # The renderer is cross-origin; it can only read the filename if it's exposed.
+    assert "content-disposition" in xlsx.headers["access-control-expose-headers"].lower()
 
 
 def test_bom_empty_without_project():

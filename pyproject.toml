@@ -40,6 +40,7 @@ server = [
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
     "pydantic-ai-slim[anthropic,google,openai]>=2.46",
+    "openpyxl>=3.1",
 ]
 # Freezes the sidecar for the desktop installers (packaging/sidecar.spec).
 packaging = ["pyinstaller>=6.16"]
