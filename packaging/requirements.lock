@@ -44,6 +44,8 @@ distro==1.9.0
     # via google-genai
 docstring-parser==0.18.0
     # via anthropic
+et-xmlfile==2.0.0
+    # via openpyxl
 fastapi==0.143.0
     # via ohmen (pyproject.toml)
 genai-prices==0.1.10
@@ -99,6 +101,8 @@ openai==3.28.0
     # via
     #   ohmen (pyproject.toml)
     #   pydantic-ai-slim
+openpyxl==3.1.5
+    # via ohmen (pyproject.toml)
 opentelemetry-api==1.45.1
     # via
     #   fastapi

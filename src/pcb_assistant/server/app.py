@@ -26,6 +26,7 @@ from fastapi import (
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 
+from pcb_assistant.bom import export
 from pcb_assistant.bom.fill import BomProposal, ProposalStore
 from pcb_assistant.bom.models import BomRow
 from pcb_assistant.bom.store import BomStore
@@ -65,6 +66,7 @@ def create_app(token: str | None = None) -> FastAPI:
         allow_origin_regex=r"^http://(localhost|127\.0\.0\.1):\d+$",
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=["Content-Disposition"],  # the renderer names downloads from it
     )
 
     @app.get("/healthz")
@@ -356,42 +358,21 @@ def create_app(token: str | None = None) -> FastAPI:
     @app.get("/bom.csv")
     def bom_csv():
         """Export the full BOM as CSV (all fields + line totals + a board total)."""
-        import csv
-        import io
-
-        from fastapi.responses import Response
-
-        rows = BomStore.for_project(_require_project()).list()
-        cols = [
-            "refdes", "qty", "value", "footprint", "mpn", "manufacturer", "distributor_pn",
-            "unit_price", "line_total", "why", "datasheet_url", "product_url", "source", "status",
-        ]
-        def cell(v):
-            # A spreadsheet runs text starting with '=' or '@' as a formula.
-            return "'" + v if isinstance(v, str) and v[:1] in ("=", "@") else v
-
-        buf = io.StringIO()
-        w = csv.writer(buf)
-        w.writerow(cols)
-        total = 0.0
-        for r in rows:
-            lt = r.line_total
-            if lt:
-                total += lt
-            w.writerow([cell(v) for v in [
-                " ".join(r.refdes), r.qty, r.value or "", r.footprint or "", r.mpn or "",
-                r.manufacturer or "", r.distributor_pn or "",
-                "" if r.unit_price is None else r.unit_price,
-                "" if lt is None else lt,
-                r.why, r.datasheet_url or "", r.product_url or "", r.source, r.status,
-            ]])
-        w.writerow(["TOTAL"] + [""] * (cols.index("line_total") - 1) + [round(total, 2)]
-                   + [""] * (len(cols) - cols.index("line_total") - 1))
+        project = _require_project()
         return Response(
-            # The byte-order mark makes Excel read UTF-8, so 10kΩ and 4.7µF survive.
-            content="﻿" + buf.getvalue(),
+            content=export.bom_csv(BomStore.for_project(project).list()),
             media_type="text/csv; charset=utf-8",
-            headers={"Content-Disposition": 'attachment; filename="bom.csv"'},
+            headers={"Content-Disposition": export.content_disposition(export.export_filename(project.name, "csv"))},
+        )
+
+    @app.get("/bom.xlsx")
+    def bom_xlsx():
+        """Export the BOM as a formatted Excel sheet (sections, live totals, flags)."""
+        project = _require_project()
+        return Response(
+            content=export.bom_xlsx(BomStore.for_project(project).list(), project.name),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": export.content_disposition(export.export_filename(project.name, "xlsx"))},
         )
 
     @app.post("/bom/fill", response_model=list[BomRow])
