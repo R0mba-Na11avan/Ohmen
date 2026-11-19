@@ -325,15 +325,32 @@ export interface ServiceStatus {
 export const getServices = () => get<Record<'digikey', ServiceStatus>>('/settings/services')
 export const testDigikey = () => postJson<ServiceStatus>('/settings/services/digikey/test', {})
 
-// Fetch the BOM as CSV and trigger a download in-app (no external browser).
-export async function downloadBomCsv(): Promise<void> {
-  const r = await fetch(`${await base()}/bom.csv`, { headers: await authed() })
-  if (!r.ok) throw new Error(await errText(r, '/bom.csv'))
+export type BomExportFormat = 'xlsx' | 'csv'
+
+// The server names the file '<project>-BOM-<date>.<ext>'; prefer the exact
+// UTF-8 name (filename*) over the ASCII fallback.
+function attachmentName(header: string | null, fallback: string): string {
+  const star = header?.match(/filename\*=UTF-8''([^;]+)/i)
+  if (star) {
+    try {
+      return decodeURIComponent(star[1])
+    } catch {
+      /* fall through to the plain name */
+    }
+  }
+  return header?.match(/filename="([^"]+)"/i)?.[1] ?? fallback
+}
+
+// Fetch the BOM export and trigger a download in-app (no external browser).
+export async function downloadBom(format: BomExportFormat): Promise<void> {
+  const path = `/bom.${format}`
+  const r = await fetch(`${await base()}${path}`, { headers: await authed() })
+  if (!r.ok) throw new Error(await errText(r, path))
   const blob = await r.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'bom.csv'
+  a.download = attachmentName(r.headers.get('Content-Disposition'), `bom.${format}`)
   a.click()
   URL.revokeObjectURL(url)
 }

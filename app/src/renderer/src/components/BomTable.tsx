@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { MoreHorizontal } from 'lucide-react'
+import { ChevronDown, MoreHorizontal } from 'lucide-react'
 import {
   addBomRow,
   deleteBomRow,
-  downloadBomCsv,
+  downloadBom,
   fillBom,
   getBom,
   getBomProposals,
@@ -11,6 +11,7 @@ import {
   mergeBomRows,
   proposeBomFill,
   updateBomRow,
+  type BomExportFormat,
   type BomProposal,
   type BomRow,
 } from '../api'
@@ -27,18 +28,8 @@ function scrollParent(el: HTMLElement | null): HTMLElement | null {
   return null
 }
 
-// Row actions live behind a three-dot menu — no icon clutter per row.
-function RowMenu({
-  status,
-  onPin,
-  onReject,
-  onDelete,
-}: {
-  status: string
-  onPin: () => void
-  onReject: () => void
-  onDelete: () => void
-}) {
+// A small popover menu: closes on an outside click or Escape.
+function useMenu() {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -60,17 +51,117 @@ function RowMenu({
     fn()
     setOpen(false)
   }
-  const item = {
-    display: 'block',
-    width: '100%',
-    textAlign: 'left' as const,
-    background: 'transparent',
-    border: 0,
-    borderRadius: radius.sm,
-    padding: '6px 10px',
-    fontSize: type.size.sm,
-    color: color.inkPrimary,
+  return { open, setOpen, ref, run }
+}
+
+const menuItem = {
+  display: 'block',
+  width: '100%',
+  textAlign: 'left' as const,
+  background: 'transparent',
+  border: 0,
+  borderRadius: radius.sm,
+  padding: '6px 10px',
+  fontSize: type.size.sm,
+  color: color.inkPrimary,
+}
+
+const menuPanel = {
+  position: 'absolute' as const,
+  right: 0,
+  top: '100%',
+  marginTop: 4,
+  minWidth: 132,
+  background: color.benchRaised,
+  border: `1px solid ${color.benchLineStrong}`,
+  borderRadius: radius.md,
+  boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
+  padding: 4,
+  zIndex: 10,
+}
+
+// Export split button: the main half repeats the last format used, the chevron
+// picks the other. Excel is the readable sheet; CSV is for distributor importers.
+const EXPORT_KEY = 'pcb.bom.exportFormat'
+const EXPORT_LABEL: Record<BomExportFormat, string> = { xlsx: 'Excel (.xlsx)', csv: 'CSV (.csv)' }
+
+function ExportButton({ disabled, onError }: { disabled: boolean; onError: (e: string) => void }) {
+  const { open, setOpen, ref, run } = useMenu()
+  const [format, setFormat] = useState<BomExportFormat>(() => {
+    try {
+      return localStorage.getItem(EXPORT_KEY) === 'csv' ? 'csv' : 'xlsx'
+    } catch {
+      return 'xlsx'
+    }
+  })
+  const exportAs = (f: BomExportFormat) => {
+    setFormat(f)
+    try {
+      localStorage.setItem(EXPORT_KEY, f)
+    } catch {
+      // storage blocked: the choice just won't survive a restart
+    }
+    downloadBom(f).catch((e) => onError(String(e)))
   }
+
+  return (
+    <div ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button
+        onClick={() => exportAs(format)}
+        disabled={disabled}
+        style={{ borderTopRightRadius: 0, borderBottomRightRadius: 0 }}
+      >
+        Export {format === 'xlsx' ? 'Excel' : 'CSV'}
+      </button>
+      <button
+        aria-label="Choose export format"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        style={{
+          borderTopLeftRadius: 0,
+          borderBottomLeftRadius: 0,
+          marginLeft: -1,
+          padding: '5px 6px',
+          display: 'inline-flex',
+          alignItems: 'center',
+        }}
+      >
+        <ChevronDown size={13} strokeWidth={1.75} />
+      </button>
+      {open && (
+        <div role="menu" className="popin" style={menuPanel}>
+          {(['xlsx', 'csv'] as const).map((f) => (
+            <button
+              key={f}
+              role="menuitem"
+              style={{ ...menuItem, color: f === format ? color.copperBright : color.inkPrimary }}
+              onClick={run(() => exportAs(f))}
+            >
+              {EXPORT_LABEL[f]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Row actions live behind a three-dot menu — no icon clutter per row.
+function RowMenu({
+  status,
+  onPin,
+  onReject,
+  onDelete,
+}: {
+  status: string
+  onPin: () => void
+  onReject: () => void
+  onDelete: () => void
+}) {
+  const { open, setOpen, ref, run } = useMenu()
+  const item = menuItem
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
@@ -84,23 +175,7 @@ function RowMenu({
         <MoreHorizontal size={16} strokeWidth={1.75} />
       </button>
       {open && (
-        <div
-          role="menu"
-          className="popin"
-          style={{
-            position: 'absolute',
-            right: 0,
-            top: '100%',
-            marginTop: 4,
-            minWidth: 132,
-            background: color.benchRaised,
-            border: `1px solid ${color.benchLineStrong}`,
-            borderRadius: radius.md,
-            boxShadow: '0 8px 32px rgba(0,0,0,0.45)',
-            padding: 4,
-            zIndex: 10,
-          }}
-        >
+        <div role="menu" className="popin" style={menuPanel}>
           <button role="menuitem" style={item} onClick={run(onPin)}>
             {status === 'pinned' ? 'Unpin' : 'Pin'}
           </button>
@@ -367,9 +442,7 @@ export function BomTable({ refreshKey, onCount }: { refreshKey: number; onCount?
         <input placeholder="footprint" value={draft.footprint} onChange={(e) => setDraft({ ...draft, footprint: e.target.value })} style={{ width: 130, fontFamily: type.mono }} />
         <button onClick={add}>Add row</button>
         <span style={{ flex: 1 }} />
-        <button onClick={() => downloadBomCsv().catch((e) => setErr(String(e)))} disabled={rows.length === 0}>
-          Export CSV
-        </button>
+        <ExportButton disabled={rows.length === 0} onError={setErr} />
       </div>
       {err && <pre style={{ color: color.statusCritical, whiteSpace: 'pre-wrap' }}>{err}</pre>}
       <BomProposals
